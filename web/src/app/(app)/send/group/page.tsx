@@ -96,7 +96,7 @@ export default function GroupSendPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md pb-24">
+    <div className="mx-auto max-w-md pb-40">
       
       {offline && <OfflineBanner />}
       <Link href="/send" className="mb-3 inline-flex min-h-11 items-center gap-1 text-[13px] font-semibold text-primary-text hover:underline"><ArrowLeft aria-hidden className="size-4" />Send money</Link>
@@ -109,7 +109,7 @@ export default function GroupSendPage() {
 
       <section className="mt-7"><label htmlFor="group-note" className="text-[13px] font-medium text-text-secondary">Note <span className="font-normal">(optional)</span></label><textarea id="group-note" value={note} onChange={(event) => setNote(event.target.value.slice(0, 140))} disabled={offline} rows={3} className="mt-1.5 w-full resize-none rounded-md border border-control bg-surface px-3 py-2.5 text-[15px] text-text outline-none focus:border-primary disabled:opacity-55" placeholder="What is this group transfer for?" /></section>
       {error && <p aria-live="polite" className="mt-5 rounded-md bg-danger-surface px-3 py-2.5 text-[13px] font-medium text-danger-text">{error}</p>}
-      <div className="safe-bottom fixed inset-x-0 bottom-[56px] z-20 border-t border-divider bg-bg/95 px-4 py-3 backdrop-blur lg:bottom-0 lg:left-[15rem]"><div className="mx-auto max-w-md"><Button full onClick={review} disabled={offline || recipients.length < 2 || Boolean(amountError) || totalMinor === null}>Review group transfer <ChevronRight aria-hidden className="size-4" /></Button></div></div>
+      <div className="safe-bottom fixed inset-x-0 bottom-[calc(56px+env(safe-area-inset-bottom))] z-20 border-t border-divider bg-bg px-4 py-3 lg:bottom-0 lg:left-[15rem]"><div className="mx-auto max-w-md"><Button full onClick={review} disabled={offline || recipients.length < 2 || Boolean(amountError) || totalMinor === null}>Review group transfer <ChevronRight aria-hidden className="size-4" /></Button></div></div>
       {reviewing && recipients.length > 1 && totalMinor !== null && <ConfirmationSheet amountMinor={totalMinor} recipient={recipients[0]} recipients={recipients} note={note.trim()} confirming={submitting} disabled={offline} error={error} onCancel={() => !submitting && setReviewing(false)} onConfirm={() => void confirm()} />}
       {stepUpReason && <StepUpDialog reason={stepUpReason} onCancel={() => setStepUpReason(null)} onVerify={(pin) => confirm(pin)} />}
     </div>

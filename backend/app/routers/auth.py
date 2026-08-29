@@ -57,6 +57,10 @@ def register(body: RegisterBody, session: Session = Depends(get_session)):
             text("INSERT INTO accounts (id, user_id, kind) VALUES (:id, :uid, 'USER')"),
             {"id": account_id, "uid": user_id},
         )
+        session.execute(
+            text("INSERT INTO smart_wallets (id, user_id) VALUES (:id, :uid)"),
+            {"id": user_id, "uid": user_id},
+        )
         reference = issue_registration_grant(session, user_id, account_id)
         session.commit()
     except IntegrityError:

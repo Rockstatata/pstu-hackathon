@@ -115,7 +115,7 @@ export default function SendPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md pb-24">
+    <div className="mx-auto max-w-md pb-40">
       
       {offline && <OfflineBanner />}
       <Link href="/" className="mb-3 inline-flex min-h-11 items-center gap-1 text-[13px] font-semibold text-primary-text hover:underline"><ArrowLeft aria-hidden className="size-4" />Home</Link>
@@ -144,7 +144,7 @@ export default function SendPage() {
       </section>
 
       {formError && <p aria-live="polite" className="mt-5 rounded-md bg-danger-surface px-3 py-2.5 text-[13px] font-medium text-danger-text">{formError}</p>}
-      <div className="safe-bottom fixed inset-x-0 bottom-[56px] z-20 border-t border-divider bg-bg/95 px-4 py-3 backdrop-blur lg:bottom-0 lg:left-[15rem] sm:px-6">
+      <div className="safe-bottom fixed inset-x-0 bottom-[calc(56px+env(safe-area-inset-bottom))] z-20 border-t border-divider bg-bg px-4 py-3 lg:bottom-0 lg:left-[15rem] sm:px-6">
         <div className="mx-auto max-w-md"><Button full onClick={continueToConfirmation} disabled={offline || !recipient || Boolean(amountError) || amountMinor === null || amountMinor <= 0}>Review transfer <ChevronRight aria-hidden className="size-4" /></Button></div>
       </div>
 

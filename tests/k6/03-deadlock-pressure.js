@@ -24,6 +24,8 @@ import { STATUS, TAKA } from './lib/config.js';
 const POOL_SIZE = 6;
 const AMOUNT = 5 * TAKA;
 const GROUP_SHARE = 2 * TAKA;
+const PRESSURE_VUS = Number(__ENV.PRESSURE_VUS || 24);
+const PRESSURE_DURATION = __ENV.PRESSURE_DURATION || '45s';
 
 const serverErrors = new Counter('deadlock_server_errors');
 const lockFailures = new Counter('deadlock_lock_failures');
@@ -33,8 +35,8 @@ export const options = {
   scenarios: {
     crossfire: {
       executor: 'constant-vus',
-      vus: 24,
-      duration: '45s',
+      vus: PRESSURE_VUS,
+      duration: PRESSURE_DURATION,
     },
   },
   thresholds: {
@@ -112,7 +114,7 @@ export function teardown() {
   });
 
   console.log(
-    `\n[03] Bidirectional + group transfers across ${POOL_SIZE} accounts, 24 VUs, 45s.\n` +
+    `\n[03] Bidirectional + group transfers across ${POOL_SIZE} accounts, ${PRESSURE_VUS} VUs, ${PRESSURE_DURATION}.\n` +
       `     integrity: ${describeIntegrity(report)}\n` +
       `     verdict:   ${ok ? 'zero deadlocks, ledger balanced' : 'FAILED'}\n`,
   );

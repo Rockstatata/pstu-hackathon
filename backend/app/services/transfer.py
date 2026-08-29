@@ -19,7 +19,7 @@ from ..db import set_lock_timeout
 from ..errors import DomainError
 from ..money import format_taka
 from ..security import verify_pin
-from . import ledger
+from . import ledger, notifications
 
 
 @dataclass(frozen=True)
@@ -140,6 +140,9 @@ def execute(
     idempotency_key: str,
     request_hash: str,
     receipt_context: dict | None = None,
+    kind_override: str | None = None,
+    reversal_of: uuid.UUID | None = None,
+    preauthorized: bool = False,
     fail_after_journal: bool = False,
 ) -> tuple[int, dict]:
     """Run one Transfer to completion, or leave the Ledger exactly as it was.
@@ -185,7 +188,7 @@ def execute(
     policy.check_daily_total(session, sender_account_id, total)
 
     risk = policy.assess(session, sender_account_id, recipient_ids, total)
-    if risk.step_up_required:
+    if risk.step_up_required and not preauthorized:
         if not pin:
             raise DomainError(
                 "STEP_UP_REQUIRED",
@@ -196,7 +199,7 @@ def execute(
         if not verify_pin(pin, sender_pin_hash):
             raise DomainError("STEP_UP_FAILED", "That PIN is not correct.", 403)
 
-    kind = "GROUP" if len(resolved) > 1 else "P2P"
+    kind = kind_override or ("GROUP" if len(resolved) > 1 else "P2P")
     legs = [ledger.Leg(sender_account_id, -total)]
     legs += [ledger.Leg(r.account_id, r.amount_poisha) for r in resolved]
 
@@ -208,6 +211,7 @@ def execute(
         note=note,
         risk_decision=risk.decision,
         risk_reason=risk.reason,
+        reversal_of=reversal_of,
         fail_after_journal=fail_after_journal,
     )
 
@@ -225,6 +229,16 @@ def execute(
         resource_id=transfer_id,
         metadata={"reference": reference, "totalPoisha": total, "recipients": len(resolved)},
     )
+    for recipient in resolved:
+        notifications.create(
+            session,
+            user_id=recipient.user_id,
+            kind="MONEY_RECEIVED",
+            title="Money received",
+            message=f"You received BDT {format_taka(recipient.amount_poisha)}. Reference {reference}.",
+            resource_type="transfer",
+            resource_id=transfer_id,
+        )
 
     # Committed in the same transaction as the money. A crash after commit replays
     # this response; a crash before commit leaves neither the money nor the record.

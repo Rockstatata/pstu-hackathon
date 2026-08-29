@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Response
@@ -11,7 +12,7 @@ from ..config import settings
 from ..db import SessionLocal, get_session
 from ..deps import CurrentUser, current_user
 from ..errors import DomainError
-from ..services import ledger, transfer
+from ..services import ledger, money_requests, transfer
 from ..validation import normalize_bangladesh_phone, validate_pin
 
 router = APIRouter(tags=["transfers"])
@@ -316,8 +317,9 @@ def get_transfer(
     row = session.execute(
         text(
             """
-            SELECT t.public_reference, t.kind, t.status, t.note, t.created_at,
+            SELECT t.id, t.public_reference, t.kind, t.status, t.note, t.created_at,
                    t.risk_reason, je.amount_poisha, t.sender_account_id,
+                   original.public_reference AS original_transfer_reference,
                    CASE WHEN je.amount_poisha < 0 THEN (
                        SELECT COALESCE(
                            jsonb_agg(
@@ -347,6 +349,7 @@ def get_transfer(
             JOIN transfers t ON t.id = je.transfer_id
             JOIN accounts sa ON sa.id = t.sender_account_id
             JOIN users su ON su.id = sa.user_id
+            LEFT JOIN transfers original ON original.id = t.reversal_of
             WHERE t.public_reference = :ref AND je.account_id = :aid
             """
         ),
@@ -359,8 +362,77 @@ def get_transfer(
         raise DomainError("TRANSFER_NOT_FOUND", "No transaction found with that ID.", 404)
 
     item = _row_to_item(row)
-    item["reversible"] = False
-    item["notReversibleReason"] = (
-        "Consent-based Reversals are not available in this release."
-    )
+    item["originalTransferReference"] = row.original_transfer_reference
+    item["reversalRequestId"] = None
+    item["reversalRequestStatus"] = None
+    if row.kind == "GROUP":
+        item["reversible"] = False
+        item["notReversibleReason"] = "Individual Group Transfer legs cannot be reversed."
+    elif row.kind in {"REVERSAL", "ISSUANCE"}:
+        item["reversible"] = False
+        item["notReversibleReason"] = "A Reversal cannot itself be reversed."
+    elif row.amount_poisha > 0:
+        item["reversible"] = False
+        item["notReversibleReason"] = "Only the original sender can request a Reversal."
+    else:
+        request_row = session.execute(
+            text(
+                "SELECT id, status, expires_at FROM money_requests "
+                "WHERE reversal_of_transfer_id = :tid"
+            ),
+            {"tid": row.id},
+        ).one_or_none()
+        if request_row is None:
+            item["reversible"] = True
+            item["notReversibleReason"] = None
+        else:
+            status = (
+                "EXPIRED"
+                if request_row.status == "PENDING"
+                and request_row.expires_at <= datetime.now(timezone.utc)
+                else request_row.status
+            )
+            item["reversible"] = False
+            item["notReversibleReason"] = f"A Reversal request is already {status.lower()}."
+            item["reversalRequestId"] = str(request_row.id)
+            item["reversalRequestStatus"] = status
     return item
+
+
+@router.post("/transfers/{reference}/reversal-request", status_code=201)
+def request_reversal(
+    reference: str,
+    response: Response,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: CurrentUser = Depends(current_user),
+    session: Session = Depends(get_session),
+):
+    key = idem.require_key(idempotency_key)
+    request_hash = idem.hash_request({"transferReference": reference})
+    try:
+        idem.peek(session, user.user_id, key, request_hash)
+    except idem.ReplayResult as replay:
+        response.status_code = replay.status_code
+        response.headers["X-Idempotent-Replay"] = "true"
+        return replay.body
+    try:
+        status, result = money_requests.create_reversal_request(
+            session,
+            requester_user_id=user.user_id,
+            requester_account_id=user.account_id,
+            transfer_reference=reference,
+            idempotency_key=key,
+            request_hash=request_hash,
+        )
+        session.commit()
+    except idem.ReplayResult as replay:
+        session.rollback()
+        response.status_code = replay.status_code
+        response.headers["X-Idempotent-Replay"] = "true"
+        return replay.body
+    except Exception:
+        session.rollback()
+        raise
+    response.status_code = status
+    response.headers["X-Idempotent-Replay"] = "false"
+    return result

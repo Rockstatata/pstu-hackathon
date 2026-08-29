@@ -11,9 +11,9 @@
 - [x] Publish the codebase tour, architecture, frontend integration, and reliability guides.
 - [x] Merge the frontend branch only after the backend contract is green.
 
-Release boundary: notifications, consent Reversals, and scheduled Transfers remain
-deferred. Their frontend controls must stay hidden. Transaction detail must explain
-that Reversals are unavailable in this release.
+Release boundary update: notifications, consent Reversals, Scheduled Transfers, Smart Wallet, and
+Smart Group Settlement are now shipped against real endpoints. The remaining Phase 0.5 items are
+external deployment verification, not hidden product controls.
 
 **Deadline 15:00.** Plan written 10:35. Design locked via `/grill-with-docs`; see `CONTEXT.md` and `docs/adr/`.
 
@@ -124,9 +124,9 @@ Redeploy from here on is `git pull && docker compose up -d --build` (~2m) plus V
 
 ## Phase 9 — Reversal (15m, requires Phase 7)
 
-- [ ] `Request Reversal` raises a money request linked to the original transfer
-- [ ] Block reversal-of-reversal and group legs, with a stated reason (ADR-0005)
-- [ ] Wire into Screen E2
+- [x] `Request Reversal` raises a money request linked to the original transfer
+- [x] Block reversal-of-reversal and group legs, with a stated reason (ADR-0005)
+- [x] Wire into Screen E2
 
 ## Phase 10 — Risk-based step-up (30m)
 
@@ -136,16 +136,16 @@ Redeploy from here on is `git pull && docker compose up -d --build` (~2m) plus V
 
 ## Phase 11 — Notifications (20m)
 
-- [ ] `notifications` written **in the same transaction** as the journal entries
-- [ ] Poll every 10s; no WebSockets, no Web Push
-- [ ] Screen H1
+- [x] `notifications` written **in the same transaction** as the journal entries
+- [x] Poll every 10s; no WebSockets, no Web Push
+- [x] Screen H1
 
 ## Phase 12 — Scheduled transfers (50m) — *added at user request over a Tier-2 recommendation*
 
-- [ ] `scheduled_transfers` table with its own lifecycle (a pending *intention*, never a pending Transfer)
-- [ ] Worker container executing due transfers through the same idempotent engine
-- [ ] Failure recorded with a reason; no silent retry storms
-- [ ] Screens G1, G2
+- [x] `scheduled_transfers` table with its own lifecycle (a pending *intention*, never a pending Transfer)
+- [x] Worker container executing due transfers through the same idempotent engine
+- [x] Failure recorded with a reason; no silent retry storms
+- [x] Screens G1, G2
 
 ## Phase 13 — Polish (whatever remains)
 
@@ -354,24 +354,40 @@ Coordination boundary: the concurrent frontend-integration session owns all curr
 and new frontend routes; shared frontend seams are integrated only after that session's build is
 stable and its diff has been re-read.
 
-- [ ] 1. Reconcile the concurrent integration diff, run its lint/build/tests, and record remaining
+- [x] 1. Reconcile the concurrent integration diff, run its lint/build/tests, and record remaining
       contract gaps without overwriting active work.
-- [ ] 2. Define Smart Wallet terms and record the architectural boundary between the conserved
+- [x] 2. Define Smart Wallet terms and record the architectural boundary between the conserved
       digital Ledger and the append-only Cash Inventory Journal.
-- [ ] 3. Implement the authenticated Smart Wallet API: expected cash, connection simulation,
+- [x] 3. Implement the authenticated Smart Wallet API: expected cash, connection simulation,
       idempotent cash observations, immutable history, and explicit Cash Count Reconciliation.
-- [ ] 4. Add PostgreSQL-backed regression tests proving ownership isolation, idempotency,
+- [x] 4. Add PostgreSQL-backed regression tests proving ownership isolation, idempotency,
       concurrent-event safety, append-only history, reconciliation, and unchanged Ledger integrity.
-- [ ] 5. Add the responsive Smart Wallet screen in the existing Chorui design system, with
+- [x] 5. Add the responsive Smart Wallet screen in the existing Chorui design system, with
       simulator controls, connection/last-sync state, activity, and reconciliation flow.
-- [ ] 6. Implement Smart Group Settlement as Group accounting plus an explainable settlement plan;
+- [x] 6. Implement Smart Group Settlement as Group accounting plus an explainable settlement plan;
       preserve per-payer consent and route each approved outgoing movement through the Transfer engine.
-- [ ] 7. Finish the remaining authorized product work: Reversals, notifications, scheduled Transfer
+- [x] 7. Finish the remaining authorized product work: Reversals, notifications, scheduled Transfer
       intentions, their screens, and release-boundary documentation.
-- [ ] 8. Run backend regressions, frontend lint/build, Compose integration, k6 invariants, and the
+- [x] 8. Run backend regressions, frontend lint/build, Compose integration, k6 invariants, and the
       final `/api/v1/integrity` gate; update contracts, handoff, and this review.
 
 ### Review — smart extensions and release completion
 
-_In progress. Codex owns new Smart Wallet/settlement modules; concurrent integration files remain
-protected until the other session finishes._
+Implemented the Smart Wallet as a separate append-only Cash Inventory Journal, with connection
+simulation, idempotent Cash Events, and explicit Cash Count Reconciliation. Implemented immutable
+Expense Groups and explainable Net Positions; each member approves only their own outgoing Group
+Settlement through the existing Transfer engine.
+
+Finished the previously deferred consent Reversal, Notification, and Scheduled Transfer lifecycles.
+Scheduled instructions require PIN authorization without storing the PIN, are claimed with
+`FOR UPDATE SKIP LOCKED`, and commit their resulting Transfer/status/notifications atomically.
+
+Verification: 33 backend tests and the expanded black-box gate pass on a clean PostgreSQL stack;
+frontend lint and production build pass with 21 routes. Duplicate, overspend, deadlock-pressure,
+sustained-load, replica-kill, and Money Request payment storms pass. The final Ledger is `HEALTHY`
+with zero difference. A pressure-only nginx timeout was reproduced, minimized, fixed at the gateway
+boundary, and rerun at both 48-VU/10-second and default 24-VU/45-second settings.
+
+External follow-up remains Phase 0.5 only: deploy the current commit to Azure/Vercel, verify public
+TLS/CORS end to end, and perform the real-phone click-through. Those actions require deployment
+credentials and a physical device and were not claimed as locally completed.

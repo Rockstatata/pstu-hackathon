@@ -70,9 +70,9 @@ function HomeContent() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(20rem,1.1fr)] lg:items-start">
         <section>
           <BalanceCard balanceMinor={account?.balanceMinor ?? null} asOf={account?.asOf ?? cachedAt} offline={offline || Boolean(cachedAt)} />
-          <div className="mt-4">
-            {shippedQuickActions().map(({ href, label, icon: Icon }) => (
-              <Link key={href} href={href} className={`flex min-h-12 items-center justify-center gap-2 rounded-md px-5 text-[15px] font-semibold transition-colors ${offline ? "pointer-events-none bg-surface-subtle text-text-muted" : "bg-primary text-primary-fg hover:bg-primary-hover"}`} aria-disabled={offline || undefined}>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            {shippedQuickActions().map(({ href, label, icon: Icon }, index) => (
+              <Link key={href} href={href} className={`flex min-h-12 items-center justify-center gap-2 rounded-md border px-5 text-[15px] font-semibold transition-[background-color,color,border-color,transform] duration-150 active:translate-y-px ${offline ? "pointer-events-none border-divider bg-surface-subtle text-text-muted" : index === 0 ? "border-primary bg-primary text-primary-fg hover:bg-primary-hover" : "border-purple-border bg-surface text-primary-text hover:bg-purple-soft"}`} aria-disabled={offline || undefined}>
                 <Icon aria-hidden className="size-5" />{label}
               </Link>
             ))}

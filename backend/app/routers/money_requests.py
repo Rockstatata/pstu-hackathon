@@ -84,6 +84,8 @@ class MoneyRequestResource(BaseModel):
     created_at: datetime = Field(alias="createdAt")
     expires_at: datetime = Field(alias="expiresAt")
     resolved_at: datetime | None = Field(alias="resolvedAt")
+    request_kind: Literal["STANDARD", "REVERSAL"] = Field(alias="requestKind")
+    original_transfer_reference: str | None = Field(alias="originalTransferReference")
 
     model_config = {"populate_by_name": True}
 
@@ -105,7 +107,7 @@ class ReceiptRecipient(BaseModel):
 class MoneyRequestPaymentReceipt(BaseModel):
     transfer_id: str = Field(alias="transferId")
     reference: str
-    kind: Literal["P2P"]
+    kind: Literal["P2P", "REVERSAL"]
     status: Literal["COMPLETED"]
     total_poisha: int = Field(alias="totalPoisha")
     note: str | None

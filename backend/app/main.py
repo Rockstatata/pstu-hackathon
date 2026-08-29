@@ -16,7 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from .config import settings
 from .db import SessionLocal, apply_schema
 from .errors import DomainError, domain_error_handler
-from .routers import accounts, auth, money_requests, system, transfers
+from .routers import accounts, auth, group_settlement, money_requests, notifications, scheduled_transfers, smart_wallet, system, transfers
 from .services import heartbeats, ledger
 
 ISSUANCE_PHONE = "00000000000"
@@ -259,5 +259,15 @@ async def unhandled_handler(request: Request, exc: Exception):
     )
 
 
-for r in (auth.router, accounts.router, transfers.router, money_requests.router, system.router):
+for r in (
+    auth.router,
+    accounts.router,
+    transfers.router,
+    money_requests.router,
+    group_settlement.router,
+    notifications.router,
+    scheduled_transfers.router,
+    smart_wallet.router,
+    system.router,
+):
     app.include_router(r, prefix="/api/v1")

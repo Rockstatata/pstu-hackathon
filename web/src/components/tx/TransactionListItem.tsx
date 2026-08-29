@@ -18,7 +18,7 @@ export function TransactionListItem({ transfer }: { transfer: Transfer }) {
   return (
     <Link
       href={`/history/${transfer.reference}`}
-      className="flex min-h-16 items-center gap-3 rounded-md px-3 py-3 transition-colors hover:bg-surface-subtle"
+      className="flex min-h-[4.5rem] items-center gap-3 px-5 py-3 transition-colors hover:bg-surface-subtle active:bg-purple-soft"
     >
       <span
         aria-hidden

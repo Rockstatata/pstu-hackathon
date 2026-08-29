@@ -6,7 +6,7 @@ time of writing.
 
 ## Build state — GREEN
 
-`npx next build` compiles and type-checks; `npx eslint src` is clean. 16 routes are emitted.
+`npm run build` compiles and type-checks; `npm run lint` is clean. 21 routes are emitted.
 
 ## The contract
 
@@ -29,8 +29,9 @@ method plus a mapper to `lib/api.ts`.
 **Step-up fires on the first send to any new recipient**, not only above ৳25,000. The policy is
 ≥ ৳25,000, first-time recipient, or ≥5 transfers in 10 minutes. `POST /transfers` answers
 `403 STEP_UP_REQUIRED` with `error.stepUpReason`; resubmit **the same body and the same
-Idempotency-Key** with `pin`. `StepUpDialog` is wired into `/send`, `/send/group`, and request
-payment. A send flow that does not handle this fails on its first demo attempt.
+Idempotency-Key** with `pin`. `StepUpDialog` is wired into `/send`, `/send/group`, request
+payment, Group Settlement, and Scheduled Transfer creation. A send flow that does not handle this
+fails on its first demo attempt.
 
 **One idempotency key per compose session.** Generated with `newIdempotencyKey()` when the screen
 mounts, resent unchanged on every attempt including the step-up retry — a PIN is more proof of the
@@ -43,11 +44,13 @@ magnitude and carries direction in `direction`. A group send returns every recip
 **Money requests are direction-scoped server-side.** `GET /money-requests?direction=incoming|outgoing`
 is a query, not a client-side filter.
 
-## Release boundary
+## Shipped extension surfaces
 
-Notifications, scheduled transfers, and consent-based Reversals have no backend endpoint in this
-release. Their routes and controls were removed rather than left pointing at a 404. Transfer detail
-returns `reversible: false` with a reason. Do not re-add a control before its endpoint exists.
+`/smart-wallet`, `/groups`, `/notifications`, `/scheduled`, and consent Reversals are live API-backed
+features. Smart Wallet cash is deliberately separate from the conserved digital Ledger. Expense
+Groups calculate an explainable plan, but each payer approves only their own outgoing Transfer.
+Scheduled rows are future instructions, never pending money; the worker rechecks balance and policy
+when due. Reversals are consent requests that create a new compensating Transfer.
 
 `lib/fixtures.ts` and `lib/admin-demo.ts` are deleted. `/admin` reads live `GET /integrity` and
 `GET /system-info` every 5s and shows an explicit "no verdict available" state when the core is

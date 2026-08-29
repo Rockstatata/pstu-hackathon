@@ -60,9 +60,9 @@ export default function HistoryPage() {
         {FILTERS.map(({ key, label }) => <button type="button" key={key} onClick={() => setFilter(key)} aria-pressed={filter === key} className={`min-h-11 shrink-0 rounded-full px-4 text-[13px] font-semibold transition-colors ${filter === key ? "bg-purple-soft text-primary-text" : "text-text-secondary hover:bg-surface-subtle"}`}>{label}</button>)}
       </div>
       {error && <p role="alert" className="mb-5 rounded-md bg-danger-surface px-3 py-2.5 text-[13px] font-medium text-danger-text">{error}</p>}
-      <section className="card p-3 sm:p-4">
+      <section className="card overflow-hidden">
         {transfers === null ? <TransactionListSkeleton /> : visible.length ? <TransactionList transfers={visible} /> : <EmptyState icon={ReceiptText} title="Nothing matches this filter" detail={filter === "ALL" ? "Your completed transfers will appear here." : "Try another filter to see more activity."} />}
-        {cachedAt && <p className="border-t border-divider px-2 pt-3 text-[12px] text-text-muted">Cached copy · last updated {new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(new Date(cachedAt))}</p>}
+        {cachedAt && <p className="border-t border-divider px-5 py-3 text-[12px] text-text-muted">Cached copy · last updated {new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(new Date(cachedAt))}</p>}
       </section>
     </div>
   );

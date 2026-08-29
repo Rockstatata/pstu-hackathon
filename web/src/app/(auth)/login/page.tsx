@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useState } from "react";
 import { AuthFrame } from "@/components/auth/AuthFrame";
 import { PinInput } from "@/components/money/PinInput";
 import { Button } from "@/components/ui/Button";
@@ -10,7 +10,12 @@ import { PhoneInput } from "@/components/ui/PhoneInput";
 import { ApiError, api, tokenStore } from "@/lib/api";
 
 export default function LoginPage() {
+  return <Suspense fallback={null}><LoginForm /></Suspense>;
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +32,9 @@ export default function LoginPage() {
     try {
       const result = await api.login({ phone, pin });
       tokenStore.set(result.token);
-      router.replace("/");
+      const next = searchParams.get("next");
+      const destination = next?.startsWith("/") && !next.startsWith("//") ? next : "/";
+      router.replace(destination);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.sentence : "We could not sign you in. Try again.");
     } finally {

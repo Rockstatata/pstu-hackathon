@@ -61,6 +61,9 @@ export interface WireTransaction {
   counterparties: WireCounterparty[];
   reversible?: boolean;
   notReversibleReason?: string | null;
+  originalTransferReference?: string | null;
+  reversalRequestId?: string | null;
+  reversalRequestStatus?: MoneyRequestStatus | null;
 }
 
 /** What `POST /transfers` and `POST /money-requests/{id}/pay` return. */
@@ -92,6 +95,128 @@ export interface WireMoneyRequest {
   createdAt: string;
   expiresAt: string;
   resolvedAt: string | null;
+  requestKind: "STANDARD" | "REVERSAL";
+  originalTransferReference: string | null;
+}
+
+export interface WireCashEvent {
+  eventId: string;
+  sequenceNumber: number;
+  kind: "CASH_IN" | "CASH_OUT" | "RECONCILIATION";
+  amountPoisha: number;
+  expectedBeforePoisha: number;
+  expectedAfterPoisha: number;
+  countedCashPoisha: number | null;
+  source: "SIMULATOR" | "DEVICE" | "USER";
+  reason: string | null;
+  observedAt: string;
+  recordedAt: string;
+}
+
+export interface WireSmartWallet {
+  walletId: string;
+  connectionStatus: "CONNECTED" | "DISCONNECTED";
+  expectedCashPoisha: number;
+  lastSequence: number;
+  lastSyncedAt: string | null;
+  inventoryDifferencePoisha: number;
+  activity: WireCashEvent[];
+}
+
+export interface WireCashMutation {
+  event: WireCashEvent;
+  wallet: WireSmartWallet;
+}
+
+export interface WireExpenseGroupMember {
+  userId: string;
+  name: string;
+  maskedPhone: string;
+  isCurrentUser: boolean;
+}
+
+export interface WireExpenseGroupSummary {
+  groupId: string;
+  name: string;
+  memberCount: number;
+  expenseCount: number;
+  createdAt: string;
+}
+
+export interface WireGroupExpense {
+  expenseId: string;
+  description: string;
+  totalPoisha: number;
+  splitType: "EQUAL" | "EXACT" | "PERCENTAGE";
+  paidBy: WireExpenseGroupMember;
+  shares: Array<{ member: WireExpenseGroupMember; amountPoisha: number }>;
+  createdAt: string;
+}
+
+export interface WireExpenseGroup {
+  groupId: string;
+  name: string;
+  createdAt: string;
+  members: WireExpenseGroupMember[];
+  expenses: WireGroupExpense[];
+}
+
+export interface WireSettlementPlan {
+  groupId: string;
+  groupName: string;
+  planVersion: string;
+  positions: Array<{
+    member: WireExpenseGroupMember;
+    netPoisha: number;
+    direction: "RECEIVE" | "PAY" | "SETTLED";
+  }>;
+  transfers: Array<{
+    from: WireExpenseGroupMember;
+    to: WireExpenseGroupMember;
+    amountPoisha: number;
+    isCurrentUserPayer: boolean;
+  }>;
+  optimizedTransferCount: number;
+  currentUserOutgoingPoisha: number;
+  canCurrentUserSettle: boolean;
+}
+
+export interface WireNotification {
+  notificationId: string;
+  kind:
+    | "MONEY_RECEIVED"
+    | "REQUEST_RECEIVED"
+    | "REQUEST_RESOLVED"
+    | "REVERSAL_REQUESTED"
+    | "SCHEDULE_EXECUTED"
+    | "SCHEDULE_FAILED";
+  title: string;
+  message: string;
+  resourceType: string | null;
+  resourceId: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface WireNotificationList {
+  notifications: WireNotification[];
+  unreadCount: number;
+}
+
+export interface WireScheduledTransfer {
+  scheduledTransferId: string;
+  reference: string;
+  status: "SCHEDULED" | "EXECUTED" | "FAILED" | "CANCELLED";
+  amountPoisha: number;
+  note: string | null;
+  executeAt: string;
+  recipient: WireIdentity;
+  transferReference: string | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  authorizedAt: string;
+  resolvedAt: string | null;
+  createdAt: string;
 }
 
 /* ========================================================================== */
@@ -166,6 +291,9 @@ export interface Transfer {
   /** Always false in this release; the reason explains why (ADR-0005). */
   reversible: boolean;
   notReversibleReason: string | null;
+  originalTransferReference: string | null;
+  reversalRequestId: string | null;
+  reversalRequestStatus: MoneyRequestStatus | null;
 }
 
 export interface TransferListResponse {
@@ -210,6 +338,8 @@ export interface MoneyRequest {
   createdAt: string;
   expiresAt: string;
   transferReference: string | null;
+  requestKind: "STANDARD" | "REVERSAL";
+  originalTransferReference: string | null;
 }
 
 export interface MoneyRequestListResponse {
@@ -220,6 +350,123 @@ export interface CreateMoneyRequestRequest {
   payerPhone: string;
   amountMinor: number;
   reason: string;
+}
+
+export type CashEventKind = "CASH_IN" | "CASH_OUT" | "RECONCILIATION";
+
+export interface CashEvent {
+  id: string;
+  sequence: number;
+  kind: CashEventKind;
+  amountMinor: number;
+  expectedBeforeMinor: number;
+  expectedAfterMinor: number;
+  countedCashMinor: number | null;
+  source: "SIMULATOR" | "DEVICE" | "USER";
+  reason: string | null;
+  observedAt: string;
+  recordedAt: string;
+}
+
+export interface SmartWallet {
+  id: string;
+  connectionStatus: "CONNECTED" | "DISCONNECTED";
+  expectedCashMinor: number;
+  lastSequence: number;
+  lastSyncedAt: string | null;
+  inventoryDifferenceMinor: number;
+  activity: CashEvent[];
+}
+
+export interface CashMutation {
+  event: CashEvent;
+  wallet: SmartWallet;
+}
+
+export interface ExpenseGroupMember {
+  id: string;
+  name: string;
+  maskedPhone: string;
+  isCurrentUser: boolean;
+}
+
+export interface ExpenseGroupSummary {
+  id: string;
+  name: string;
+  memberCount: number;
+  expenseCount: number;
+  createdAt: string;
+}
+
+export interface GroupExpense {
+  id: string;
+  description: string;
+  totalMinor: number;
+  splitType: "EQUAL" | "EXACT" | "PERCENTAGE";
+  paidBy: ExpenseGroupMember;
+  shares: Array<{ member: ExpenseGroupMember; amountMinor: number }>;
+  createdAt: string;
+}
+
+export interface ExpenseGroup {
+  id: string;
+  name: string;
+  createdAt: string;
+  members: ExpenseGroupMember[];
+  expenses: GroupExpense[];
+}
+
+export interface SettlementPlan {
+  groupId: string;
+  groupName: string;
+  version: string;
+  positions: Array<{
+    member: ExpenseGroupMember;
+    netMinor: number;
+    direction: "RECEIVE" | "PAY" | "SETTLED";
+  }>;
+  transfers: Array<{
+    from: ExpenseGroupMember;
+    to: ExpenseGroupMember;
+    amountMinor: number;
+    isCurrentUserPayer: boolean;
+  }>;
+  optimizedTransferCount: number;
+  currentUserOutgoingMinor: number;
+  canCurrentUserSettle: boolean;
+}
+
+export interface Notification {
+  id: string;
+  kind: WireNotification["kind"];
+  title: string;
+  message: string;
+  resourceType: string | null;
+  resourceId: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationList {
+  items: Notification[];
+  unreadCount: number;
+}
+
+export interface ScheduledTransfer {
+  id: string;
+  reference: string;
+  status: WireScheduledTransfer["status"];
+  amountMinor: number;
+  note: string | null;
+  executeAt: string;
+  recipientName: string;
+  recipientMaskedPhone: string;
+  transferReference: string | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  authorizedAt: string;
+  resolvedAt: string | null;
+  createdAt: string;
 }
 
 /* -------------------------------------------------------------------------- */

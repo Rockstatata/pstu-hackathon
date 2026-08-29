@@ -198,8 +198,9 @@ not the sender's total.
 
 ### `GET /transfers/{reference}` → 200
 
-Same object plus `reversible: false` and `notReversibleReason`. Consent-based Reversals are
-deferred for this release, so the frontend must hide the action rather than offer a dead control.
+Same object plus `reversible`, `notReversibleReason`, and any linked Reversal request. The original
+sender may request Reversal only for a completed one-to-one Transfer. Approval creates a new
+compensating `REVERSAL` Transfer and marks the original `REVERSED`; no Journal Entry is edited.
 
 ---
 
@@ -245,6 +246,43 @@ adds `moneyRequestId` and `moneyRequestReference`. Same-key replay returns the s
 
 Only the payer may decline and only the requester may cancel. Repeating the same terminal action
 returns the same resource; a conflicting terminal transition returns 409.
+
+---
+
+## Reversals, Notifications, and Scheduled Transfers
+
+### `POST /transfers/{reference}/reversal-request` -> 201
+
+Requires `Idempotency-Key`. The original sender of an eligible one-to-one Transfer creates a
+Money Request with `requestKind: "REVERSAL"`. The original recipient must pay that request; payment
+creates a compensating Transfer with `kind: "REVERSAL"`. Group Transfers and Reversals cannot be
+reversed again.
+
+### `GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read-all`
+
+Notifications are scoped to the authenticated User. Money-received notifications commit in the
+same transaction as their Journal Entries; request and schedule events commit with their state
+change. `GET` returns `notifications` and the authoritative `unreadCount`.
+
+### `POST /scheduled-transfers` -> 201
+
+Requires `Idempotency-Key` and a Step-Up `pin`. Body fields are `recipientPhone`, `amountPoisha`,
+`executeAt`, and optional `note`. Creation writes a `SCHEDULED` intention only: no Transfer, fund
+reservation, or Journal Entry. The worker claims due rows with `FOR UPDATE SKIP LOCKED`, reruns all
+Transfer checks, and records `EXECUTED` with `transferReference` or one terminal `FAILED` reason.
+List with `GET /scheduled-transfers`; cancel a pending instruction with `POST .../{id}/cancel`.
+
+---
+
+## Smart Wallet and Shared Expenses
+
+`GET /smart-wallet` returns Expected Cash and append-only activity. Connection simulation, Cash
+Events, and Cash Count Reconciliation update only the physical Cash Inventory Journal; they never
+change the digital Ledger.
+
+`/expense-groups` records immutable Expenses and Shares. `GET .../settlement-plan` returns current
+Net Positions and a deterministic practical plan. `POST .../settle` executes only the signed-in
+payer's outgoing instructions through the Transfer engine and rejects a stale `planVersion`.
 
 ---
 

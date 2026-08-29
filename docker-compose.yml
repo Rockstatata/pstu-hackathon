@@ -49,6 +49,21 @@ services:
     ports:
       - "8080:80"
 
+  scheduler:
+    build: ./backend
+    command: ["python", "-m", "app.workers.scheduler"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://money:money@db:5432/money
+      JWT_SECRET: dev-secret-not-for-production
+      LOCK_TIMEOUT_MS: "3000"
+      APP_ENVIRONMENT: development
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    restart: unless-stopped
+
   web:
     build: ./web
     profiles: ["web"]

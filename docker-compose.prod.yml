@@ -66,7 +66,21 @@ services:
     restart: unless-stopped
     # Not published either — Caddy is the only public entrypoint.
 
+  scheduler:
+    build: ./backend
+    command: ["python", "-m", "app.workers.scheduler"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-money}
+      JWT_SECRET: ${JWT_SECRET:?set in .env}
+      LOCK_TIMEOUT_MS: "3000"
+      APP_ENVIRONMENT: production
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   caddy:
+    # Caddy is the only public entrypoint; the scheduler stays private.
     image: caddy:2-alpine
     environment:
       PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:?e.g. pstu-money.southeastasia.cloudapp.azure.com}

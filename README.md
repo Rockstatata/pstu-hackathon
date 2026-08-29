@@ -1,4 +1,4 @@
-# Money Movement
+# Chorui
 
 > A closed-loop, simulated BDT money platform built to prove that every taka moves atomically, exactly once, and remains auditable under retries, concurrency, and application failure.
 

@@ -55,6 +55,44 @@ CREATE TABLE IF NOT EXISTS transfers (
 CREATE INDEX IF NOT EXISTS transfers_sender_idx ON transfers (sender_account_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS transfers_reversal_idx ON transfers (reversal_of) WHERE reversal_of IS NOT NULL;
 
+-- A Money Request is an intention, never a movement of money. Only PAYING it
+-- creates a Transfer, and that link is unique so one request can never settle
+-- through two different Transfers. EXPIRED is derived for pending rows whose
+-- expires_at has passed; terminal business decisions are stored explicitly.
+CREATE TABLE IF NOT EXISTS money_requests (
+    id                    UUID PRIMARY KEY,
+    public_reference      VARCHAR(32)  NOT NULL UNIQUE,
+    requester_account_id  UUID         NOT NULL REFERENCES accounts(id),
+    payer_account_id      UUID         NOT NULL REFERENCES accounts(id),
+    amount_poisha         BIGINT       NOT NULL,
+    reason                VARCHAR(140) NOT NULL,
+    status                VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+    transfer_id           UUID         UNIQUE REFERENCES transfers(id),
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    expires_at            TIMESTAMPTZ  NOT NULL DEFAULT (now() + interval '24 hours'),
+    resolved_at           TIMESTAMPTZ,
+
+    CONSTRAINT money_requests_positive_amount CHECK (amount_poisha > 0),
+    CONSTRAINT money_requests_distinct_accounts
+        CHECK (requester_account_id <> payer_account_id),
+    CONSTRAINT money_requests_status_valid
+        CHECK (status IN ('PENDING', 'PAID', 'DECLINED', 'CANCELLED')),
+    CONSTRAINT money_requests_resolution_consistent CHECK (
+        (status = 'PENDING' AND transfer_id IS NULL AND resolved_at IS NULL)
+        OR (status = 'PAID' AND transfer_id IS NOT NULL AND resolved_at IS NOT NULL)
+        OR (status IN ('DECLINED', 'CANCELLED') AND transfer_id IS NULL AND resolved_at IS NOT NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS money_requests_requester_idx
+    ON money_requests (requester_account_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS money_requests_payer_idx
+    ON money_requests (payer_account_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS money_requests_pending_expiry_idx
+    ON money_requests (expires_at) WHERE status = 'PENDING';
+CREATE INDEX IF NOT EXISTS money_requests_transfer_idx
+    ON money_requests (transfer_id) WHERE transfer_id IS NOT NULL;
+
 -- One immutable half of a money movement. amount_poisha is SIGNED:
 -- negative = debit, positive = credit. A single signed column means
 -- "does the Ledger sum to zero?" is one SUM() with nothing to reconcile

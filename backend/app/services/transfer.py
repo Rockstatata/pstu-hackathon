@@ -139,6 +139,7 @@ def execute(
     pin: str | None,
     idempotency_key: str,
     request_hash: str,
+    receipt_context: dict | None = None,
 ) -> tuple[int, dict]:
     """Run one Transfer to completion, or leave the Ledger exactly as it was.
 
@@ -211,6 +212,8 @@ def execute(
     body = _receipt(
         transfer_id, reference, kind, total, resolved, note, risk.reason, sender_balance - total
     )
+    if receipt_context:
+        body.update(receipt_context)
 
     ledger.audit(
         session,

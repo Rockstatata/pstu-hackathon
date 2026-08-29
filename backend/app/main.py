@@ -10,7 +10,7 @@ from sqlalchemy import text
 from .config import settings
 from .db import SessionLocal, apply_schema
 from .errors import DomainError, domain_error_handler
-from .routers import accounts, auth, system, transfers
+from .routers import accounts, auth, money_requests, system, transfers
 from .services import ledger
 
 ISSUANCE_PHONE = "00000000000"
@@ -137,5 +137,5 @@ async def unhandled_handler(request: Request, exc: Exception):
     )
 
 
-for r in (auth.router, accounts.router, transfers.router, system.router):
+for r in (auth.router, accounts.router, transfers.router, money_requests.router, system.router):
     app.include_router(r, prefix="/api/v1")

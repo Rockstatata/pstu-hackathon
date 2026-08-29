@@ -14,6 +14,7 @@ export const PATHS = {
   lookup: '/users/lookup',
   transfer: '/transfers',
   transactions: '/transfers',
+  moneyRequests: '/money-requests',
   integrity: '/integrity',
   systemInfo: '/system-info',
 };
@@ -44,6 +45,7 @@ export const CODES = {
   keyReused: 'IDEMPOTENCY_KEY_REUSED',
   inProgress: 'REQUEST_IN_PROGRESS',
   recipientNotFound: 'RECIPIENT_NOT_FOUND',
+  moneyRequestNotPending: 'MONEY_REQUEST_NOT_PENDING',
   internal: 'INTERNAL_ERROR',
 };
 

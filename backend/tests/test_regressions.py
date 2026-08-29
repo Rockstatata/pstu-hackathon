@@ -10,7 +10,7 @@ from app.db import SessionLocal, engine
 from app.deps import CurrentUser
 from app.errors import DomainError
 from app.routers.transfers import TransferBody, list_transfers
-from app.services.transfer import Recipient, resolve_recipients
+from app.services.transfer import Recipient, issue_registration_grant, resolve_recipients
 
 
 class RejectingSession:
@@ -36,6 +36,10 @@ class TransferInputTests(unittest.TestCase):
 
         with self.assertRaisesRegex(DomainError, "greater than zero"):
             resolve_recipients(RejectingSession(), recipients)
+
+    def test_empty_recipient_list_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            TransferBody(recipients=[])
 
 
 class PolicyTests(unittest.TestCase):
@@ -108,22 +112,27 @@ class PolicyTests(unittest.TestCase):
 class HistoryQueryTests(unittest.TestCase):
     def test_history_uses_one_database_query(self):
         with SessionLocal() as session:
-            row = session.execute(
+            user_id = uuid.uuid4()
+            account_id = uuid.uuid4()
+            phone = "017" + str(user_id.int)[-8:]
+            session.execute(
                 text(
-                    "SELECT u.id, u.name, u.phone, u.pin_hash, a.id AS account_id "
-                    "FROM users u JOIN accounts a ON a.user_id = u.id "
-                    "JOIN journal_entries je ON je.account_id = a.id "
-                    "WHERE u.is_system = FALSE "
-                    "GROUP BY u.id, u.name, u.phone, u.pin_hash, a.id "
-                    "ORDER BY COUNT(je.id) DESC LIMIT 1"
-                )
-            ).one()
+                    "INSERT INTO users (id, phone, name, pin_hash) "
+                    "VALUES (:id, :phone, 'History User', 'x')"
+                ),
+                {"id": user_id, "phone": phone},
+            )
+            session.execute(
+                text("INSERT INTO accounts (id, user_id, kind) VALUES (:id, :uid, 'USER')"),
+                {"id": account_id, "uid": user_id},
+            )
+            issue_registration_grant(session, user_id, account_id)
             user = CurrentUser(
-                user_id=row.id,
-                account_id=row.account_id,
-                name=row.name,
-                phone=row.phone,
-                pin_hash=row.pin_hash,
+                user_id=user_id,
+                account_id=account_id,
+                name="History User",
+                phone=phone,
+                pin_hash="x",
             )
 
             statements = []
@@ -139,6 +148,7 @@ class HistoryQueryTests(unittest.TestCase):
 
             self.assertGreater(len(result["transactions"]), 0)
             self.assertEqual(len(statements), 1, "history must not issue one query per Transfer")
+            session.rollback()
 
 
 if __name__ == "__main__":

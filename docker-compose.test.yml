@@ -1,0 +1,65 @@
+name: pstu-money-test
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: money
+      POSTGRES_PASSWORD: money
+      POSTGRES_DB: money_test
+    command: >
+      postgres -c max_connections=200 -c log_lock_waits=on -c deadlock_timeout=1s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U money -d money_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://money:money@db:5432/money_test
+      JWT_SECRET: test-only-secret
+      CORS_ORIGINS: http://localhost:3000
+      APP_ENVIRONMENT: test
+      EXPECTED_REPLICAS: "3"
+      CHAOS_ENABLED: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./docs:/docs:ro
+    deploy:
+      replicas: 3
+    expose:
+      - "8000"
+
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+    ports:
+      - "18080:80"
+
+  k6:
+    image: grafana/k6:latest
+    profiles: ["chaos"]
+    volumes:
+      - ./tests/k6:/scripts:ro
+    environment:
+      BASE_URL: http://gateway/api/v1
+
+  acceptance:
+    build: ./backend
+    profiles: ["verify"]
+    command: python /tests/blackbox/backend_acceptance.py
+    environment:
+      BASE_URL: http://gateway/api/v1
+    volumes:
+      - ./tests:/tests:ro
+    depends_on:
+      - gateway

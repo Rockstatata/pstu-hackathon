@@ -122,6 +122,35 @@ export function groupTransfer(token, recipients, opts = {}) {
   return submit(token, body, opts);
 }
 
+export function createMoneyRequest(token, payerPhone, amountPoisha, reason = 'k6 request') {
+  const h = headers(token);
+  h[HEADERS.idempotencyKey] = uuid();
+  const res = http.post(
+    url(PATHS.moneyRequests),
+    JSON.stringify({ payerPhone, amountPoisha, reason }),
+    { headers: h, tags: { name: 'money-request-create' } },
+  );
+  if (res.status !== 201) fail(`money request create failed: ${res.status} ${res.body}`);
+  return res.json();
+}
+
+export function payMoneyRequestOnce(token, requestId, key, pin = PIN) {
+  const h = headers(token);
+  h[HEADERS.idempotencyKey] = key;
+  return http.post(
+    url(`${PATHS.moneyRequests}/${requestId}/pay`),
+    JSON.stringify({ pin }),
+    { headers: h, tags: { name: 'money-request-pay' } },
+  );
+}
+
+export function getMoneyRequest(token, requestId) {
+  return http.get(url(`${PATHS.moneyRequests}/${requestId}`), {
+    headers: headers(token),
+    tags: { name: 'money-request-get' },
+  });
+}
+
 function submit(token, body, opts) {
   const key = opts.key || uuid();
   const pin = opts.pin || PIN;

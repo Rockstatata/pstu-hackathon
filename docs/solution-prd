@@ -1,0 +1,3076 @@
+# Comprehensive Product Requirements Document (PRD)
+
+## Trustworthy Money Movement Platform — Hackathon Edition
+
+**Document status:** Implementation-ready v1
+**Target:** 2-person, 6-hour hackathon
+**Deployment:** Fully local through Docker
+**Primary emphasis:** Backend correctness, concurrency, resiliency, auditability and scalability design
+**Frontend:** Next.js PWA + TypeScript + Tailwind + shadcn/ui
+**Currency:** BDT only
+**Money:** Simulated funds; no banks, cards or real payment rails
+
+The product should be judged as a **small, trustworthy financial system**, not as a large feature-heavy wallet. That aligns closely with the original challenge, which asks the team to think beyond CRUD, consider simultaneous activity and future growth, and build a small but thoughtful closed ecosystem rather than a complete banking platform. 
+
+---
+
+# 1. Product vision
+
+> **Build the smallest money-movement platform in which users can trust that every taka moves correctly, exactly once, to the intended person—even when requests are duplicated, multiple transfers happen simultaneously, an application server dies, or parts of the system become unavailable.**
+
+The visible application should be deliberately simple.
+
+```text
+Register / Login
+       │
+       ▼
+     Wallet
+       │
+ ┌─────┼────────────┐
+ ▼     ▼            ▼
+Send  Request     History
+Money Money
+```
+
+The sophistication lives behind it.
+
+```text
+                   USER INTENT
+                       │
+                       ▼
+                Authentication
+                       │
+                       ▼
+                Authorization
+                       │
+                       ▼
+                 Validation
+                       │
+                       ▼
+                 Idempotency
+                       │
+                       ▼
+               Transaction Rules
+                       │
+                       ▼
+              ACID Money Movement
+                       │
+              ┌────────┴────────┐
+              ▼                 ▼
+          Balances            Ledger
+              │                 │
+              └────────┬────────┘
+                       ▼
+                  Audit Trail
+                       │
+                       ▼
+                Reconciliation
+```
+
+The internal brainstorm already identified the right identity for the product: **safe money movement + immutable ledger + concurrency guarantees**, rather than a large list of banking features. 
+
+---
+
+# 2. Product positioning
+
+This is **not**:
+
+* another generic digital-wallet UI;
+* a bKash/Nagad clone;
+* a real MFS;
+* a payment gateway;
+* a bank;
+* a blockchain system.
+
+It is:
+
+> **A closed-loop wallet designed around financial correctness and demonstrable reliability.**
+
+This distinction matters because a service such as bKash operates at enormous real-world scale—its official site reports more than 83 million customers, 350,000 agents and 900,000 merchants—but its internal transaction database and locking design are not publicly documented in enough detail for us to claim we are reproducing its architecture. ([bKash][1])
+
+We instead borrow **observable trust behaviors** and **industry-standard payment engineering patterns**.
+
+---
+
+# 3. Research-derived product lessons
+
+| Source / system             | Useful lesson for us                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------ |
+| bKash                       | Transaction ID, receipts, clear send-money flows, multiple access channels, user-visible history |
+| Nagad                       | Explicit transaction limits and policy constraints                                               |
+| M-PESA                      | Resilience and degraded/offline user experiences matter at national scale                        |
+| Stripe / PayPal             | Idempotency is mandatory for safely retrying uncertain financial requests                        |
+| PostgreSQL                  | Row locking and deterministic lock ordering can protect concurrent balance changes               |
+| Mojaloop / ledger platforms | Financial records should be auditable and immutable                                              |
+| k6                          | Concurrency and load claims should be tested, not merely described                               |
+| Toxiproxy                   | Failure behavior can be deliberately simulated locally                                           |
+
+bKash exposes a system-generated unique transaction ID and provides transaction receipts in its app, which reinforces our decision to give every completed transfer a permanent reference and detailed receipt. ([bKash][2])
+
+bKash also now exposes Request Money functionality, validating that requesting and accepting money is a natural complement to direct person-to-person transfer. ([bKash][3])
+
+Nagad publicly structures limits in terms such as per-transaction, daily and monthly amount/count limits; we should adopt the **policy concept**, though our hackathon limits remain simulated product rules rather than regulatory MFS limits. ([Nagad][4])
+
+---
+
+# 4. Product principles
+
+### P1 — Correctness before availability
+
+If PostgreSQL cannot safely confirm the transaction:
+
+```text
+DO NOT MOVE MONEY
+```
+
+Returning:
+
+```text
+503 Service Unavailable
+```
+
+is preferable to guessing from stale/cached information.
+
+---
+
+### P2 — Exactly-once business effect
+
+Networks provide retries.
+
+HTTP clients provide retries.
+
+Browsers double-submit.
+
+Users click twice.
+
+Therefore:
+
+```text
+same logical payment
+≠
+multiple financial movements
+```
+
+PayPal explicitly recommends idempotency identifiers for retrying calls after timeouts or 5xx responses without completing the operation more than once. ([PayPal Developer][5]) Stripe similarly stores the result for an idempotency key and compares parameters if that key is reused. ([Stripe Docs][6])
+
+---
+
+### P3 — Financial history is append-only
+
+Do not:
+
+```text
+UPDATE historical transfer
+DELETE completed transfer
+```
+
+Use compensating entries if something must later be reversed.
+
+---
+
+### P4 — Backend owns truth
+
+Never trust:
+
+```text
+React balance
+localStorage balance
+service-worker cache
+Redis balance
+client senderId
+```
+
+Only the authoritative backend/database determines whether funds are available.
+
+---
+
+### P5 — Human correctness matters too
+
+A technically perfect transaction sent to the wrong person is still a failure.
+
+Always make the user see:
+
+```text
+Recipient
+Amount
+Reference
+```
+
+before final confirmation.
+
+---
+
+### P6 — Failure must have explicit semantics
+
+For every failure:
+
+```text
+Did money move?
+
+YES
+NO
+UNKNOWN?
+```
+
+The system must resolve ambiguity using transaction records and idempotency rather than asking the user to guess.
+
+---
+
+# 5. Personas
+
+### Primary user
+
+A registered user who wants to:
+
+* see their simulated wallet balance;
+* send money to another registered user;
+* request money;
+* accept/decline requests;
+* verify exactly what happened afterward.
+
+### Secondary persona: Technical judge
+
+The judge wants proof that:
+
+* concurrent requests cannot overspend;
+* retries cannot duplicate transfers;
+* failures rollback safely;
+* multiple application servers behave consistently;
+* history is auditable;
+* money is conserved;
+* the architecture has a credible growth path.
+
+Therefore, the project needs a small **Engineering / Integrity view** in addition to customer screens.
+
+---
+
+# 6. Goals
+
+### Core goals
+
+1. Correct transfer of simulated BDT.
+2. Exactly-once financial effect despite retries.
+3. No negative account balances.
+4. No partial transfer.
+5. Complete transaction history.
+6. Double-entry audit trail.
+7. Safe concurrent access.
+8. Simple Request Money workflow.
+9. Stateless application tier.
+10. Local Docker demonstration of scaling/failure scenarios.
+
+### Non-goals
+
+Do not implement during the six-hour build:
+
+* real banks;
+* cards;
+* bKash/Nagad integration;
+* KYC providers;
+* cash-in/cash-out agents;
+* remittances;
+* QR merchant ecosystem;
+* multi-currency accounting;
+* blockchain;
+* Kubernetes;
+* Kafka;
+* microservices;
+* ML fraud detection;
+* real AML systems;
+* multi-region databases;
+* production disaster recovery.
+
+---
+
+# 7. Feature priority
+
+## P0 — Must work before presentation
+
+| Feature                  | Requirement                             |
+| ------------------------ | --------------------------------------- |
+| Registration             | User creates account                    |
+| Initial balance          | Automatically issue ৳100,000            |
+| Login                    | Secure authentication                   |
+| Wallet balance           | Authoritative backend balance           |
+| User lookup              | Search recipient                        |
+| Send Money               | Atomic transfer                         |
+| Confirmation             | Show recipient + amount before transfer |
+| Idempotency              | Duplicate requests produce one transfer |
+| Concurrency locking      | Prevent double-spending                 |
+| Ledger                   | Debit + credit entries                  |
+| Transaction ID           | Unique public reference                 |
+| Transaction history      | Sent/received                           |
+| Transaction details      | Receipt view                            |
+| Request Money            | Create payment request                  |
+| Pay request              | Reuse same transfer engine              |
+| Decline request          | State transition                        |
+| Double-accept protection | One request cannot be paid twice        |
+| Audit events             | Record important outcomes               |
+| Integrity endpoint       | Validate financial invariants           |
+| Docker deployment        | Entire system starts locally            |
+| Multi-API replicas       | At least 3 backend instances            |
+| Load balancer            | Requests distributed across replicas    |
+| k6 tests                 | Demonstrate concurrency                 |
+| Failure injection        | Demonstrate rollback                    |
+
+## P1 — High-value additions
+
+| Feature                    | Purpose                                 |
+| -------------------------- | --------------------------------------- |
+| Transaction/reference note | User context                            |
+| Daily transfer limit       | MFS-style deterministic policy          |
+| Per-transfer maximum       | Safety policy                           |
+| Rate limiting              | Protect abuse endpoints                 |
+| API instance identifier    | Visibly prove load balancing            |
+| Reconciliation dashboard   | Judge-friendly proof                    |
+| API failure demo           | Kill replica while traffic continues    |
+| Database failure handling  | Fail closed                             |
+| Offline PWA read mode      | Cached shell/history with stale warning |
+| Structured JSON logs       | Debugging and traceability              |
+| Request expiration         | Request lifecycle                       |
+
+## P2 — Only when P0/P1 are stable
+
+* English/Bangla interface.
+* Dark mode.
+* favorites/recent recipients.
+* notifications inside application.
+* refund request flow.
+* compensating reversal.
+* downloadable receipt.
+* richer statistics.
+* lightweight rule-based transaction-risk warning.
+
+## Future production
+
+* OTP/device trust;
+* real KYC;
+* AML/fraud infrastructure;
+* transactional outbox;
+* queue/event bus;
+* database replicas;
+* automated database failover;
+* partitioned ledger;
+* distributed tracing;
+* production secret management;
+* advanced transaction limits;
+* account freezing;
+* disputes/support workflows;
+* regulatory reporting;
+* HA Redis;
+* multi-region DR.
+
+---
+
+# 8. Core user experience
+
+## Registration
+
+```text
+Create Account
+     │
+     ▼
+Name
+Email
+Password
+     │
+     ▼
+Validate
+     │
+     ▼
+Create User
+     │
+     ▼
+Create Wallet
+     │
+     ▼
+Issue ৳100,000
+     │
+     ▼
+Create funding ledger entry
+     │
+     ▼
+Dashboard
+```
+
+Important: registration + wallet + initial funding should be atomic.
+
+A failed registration must never produce:
+
+```text
+User exists
+but wallet does not
+```
+
+or:
+
+```text
+wallet exists
+but initial ledger missing
+```
+
+---
+
+# 9. Initial money issuance
+
+Because the challenge gives users simulated money, registration legitimately increases money circulating among users.
+
+Therefore don't define:
+
+> Total money can never increase.
+
+Instead:
+
+```text
+TOTAL ISSUED FUNDS
+=
+sum(initial funding issued)
+```
+
+and require:
+
+```text
+TOTAL USER BALANCES
+=
+NET SYSTEM ISSUANCE
+```
+
+A cleaner ledger model uses a synthetic system account:
+
+```text
+SYSTEM_ISSUER  -৳100,000
+Alice          +৳100,000
+```
+
+This makes account creation itself part of the ledger model.
+
+---
+
+# 10. Send Money UX
+
+### Screen 1 — Recipient
+
+```text
+Send Money
+
+Search by
+name / email
+
+Salman Rahman
+salman@example.com
+```
+
+### Screen 2 — Amount
+
+```text
+Amount
+
+৳ 2,500
+
+Available
+৳100,000
+
+Reference
+Dinner
+```
+
+### Screen 3 — Confirmation
+
+```text
+Confirm transfer
+
+You are sending
+
+৳2,500.00
+
+TO
+Salman Rahman
+sal***@example.com
+
+Reference
+Dinner
+
+[Cancel]
+
+[Send ৳2,500]
+```
+
+This confirmation step is important because backend consistency cannot protect a user who selected the wrong person.
+
+### Screen 4 — Receipt
+
+```text
+✓ Money sent
+
+৳2,500.00
+
+To
+Salman Rahman
+
+Transaction ID
+TX-01K...
+
+Reference
+Dinner
+
+29 Aug 2026
+10:42 AM
+```
+
+bKash similarly exposes a unique transaction ID as identification for a transaction and provides detailed receipts. ([bKash][2])
+
+---
+
+# 11. Transfer backend flow
+
+```text
+POST /transfers
+Idempotency-Key: UUID
+
+        │
+        ▼
+Authenticate
+        │
+        ▼
+Resolve sender from authentication
+        │
+        ▼
+Validate payload
+        │
+        ▼
+Check idempotency key
+        │
+        ▼
+BEGIN DATABASE TRANSACTION
+        │
+        ▼
+Lock both account rows
+in deterministic order
+        │
+        ▼
+Read current balance
+        │
+        ├── insufficient ──► reject
+        │
+        ▼
+Apply deterministic limits
+        │
+        ▼
+Create transfer record
+        │
+        ▼
+Debit sender
+        │
+        ▼
+Credit receiver
+        │
+        ▼
+Create debit ledger entry
+        │
+        ▼
+Create credit ledger entry
+        │
+        ▼
+Write audit event
+        │
+        ▼
+Finalize idempotency record
+        │
+        ▼
+COMMIT
+        │
+        ▼
+Return receipt
+```
+
+---
+
+# 12. ACID guarantee
+
+## Atomicity
+
+These actions happen together:
+
+```text
+Debit sender
+Credit recipient
+Transfer record
+Ledger debit
+Ledger credit
+Idempotency completion
+```
+
+If any part fails:
+
+```text
+ROLLBACK
+```
+
+---
+
+## Consistency
+
+Invariants remain valid.
+
+```text
+balance >= 0
+
+amount > 0
+
+sender != recipient
+
+debits = credits
+
+completed transfer has ledger entries
+```
+
+---
+
+## Isolation
+
+Concurrent transactions cannot independently consume the same balance.
+
+Use row-level locking.
+
+```sql
+SELECT ...
+FROM accounts
+WHERE id IN (...)
+ORDER BY id
+FOR UPDATE;
+```
+
+PostgreSQL provides `FOR UPDATE` row-locking clauses specifically for locking selected rows. ([PostgreSQL][7])
+
+---
+
+## Durability
+
+Once committed, PostgreSQL is authoritative.
+
+A dead API process cannot erase the committed transaction.
+
+---
+
+# 13. Deterministic lock order
+
+Consider:
+
+```text
+TX-A
+Alice → Bob
+
+TX-B
+Bob → Alice
+```
+
+Never allow arbitrary:
+
+```text
+TX-A locks Alice → Bob
+TX-B locks Bob → Alice
+```
+
+Instead:
+
+```text
+first  = min(accountA.id, accountB.id)
+second = max(accountA.id, accountB.id)
+```
+
+Both transactions obtain locks in identical order.
+
+PostgreSQL explicitly recommends consistent lock ordering as the best general defense against deadlocks and advises retrying transactions that are aborted because of deadlock. ([PostgreSQL][8])
+
+Add a **bounded retry** for PostgreSQL deadlock/serialization failures:
+
+```text
+attempt 1
+↓
+deadlock
+↓
+random tiny backoff
+↓
+attempt 2
+```
+
+Maximum perhaps:
+
+```text
+2–3 attempts
+```
+
+Never infinite retry.
+
+---
+
+# 14. Idempotency design
+
+This is P0.
+
+Frontend generates:
+
+```text
+UUIDv4
+```
+
+before sending.
+
+Example:
+
+```http
+POST /api/v1/transfers
+
+Idempotency-Key:
+02b385e2-...
+```
+
+Store:
+
+```text
+idempotency_records
+
+id
+user_id
+idempotency_key
+request_hash
+resource_type
+resource_id
+status_code
+response_body
+created_at
+expires_at
+```
+
+Unique constraint:
+
+```text
+UNIQUE(user_id, idempotency_key)
+```
+
+### Same key + same request
+
+Return original result.
+
+```text
+50 calls
+same key
+same request
+
+→ one transfer
+→ 49 safe replays
+```
+
+### Same key + different payload
+
+Return:
+
+```text
+409 IDEMPOTENCY_KEY_REUSED
+```
+
+Stripe also compares incoming request parameters against the original parameters when an idempotency key is reused. ([Stripe Docs][6])
+
+---
+
+# 15. The hardest network failure
+
+Consider:
+
+```text
+Backend
+  │
+BEGIN
+  │
+Debit Alice
+Credit Bob
+Ledger
+  │
+COMMIT ✓
+  │
+API crashes
+  X
+```
+
+The browser never receives the response.
+
+Without idempotency:
+
+```text
+retry
+→ second debit
+```
+
+With idempotency:
+
+```text
+retry same key
+       │
+       ▼
+find committed transfer
+       │
+       ▼
+return original receipt
+```
+
+This should be one of your judge explanations.
+
+---
+
+# 16. Ledger model
+
+For every transfer:
+
+```text
+Transaction TX100
+Alice → Bob
+৳500
+```
+
+create:
+
+```text
+Alice
+DEBIT   ৳500
+
+Bob
+CREDIT  ৳500
+```
+
+Conceptually:
+
+```text
+-50000 poisha
++50000 poisha
+──────────────
+0
+```
+
+No money created.
+
+No money destroyed.
+
+---
+
+# 17. Money representation
+
+Recommendation:
+
+## `BIGINT` minor units
+
+Store:
+
+```text
+৳1      = 100
+৳500    = 50,000
+৳2,500  = 250,000
+```
+
+Naming:
+
+```text
+amount_minor
+balance_minor
+```
+
+Advantages:
+
+* exact integer arithmetic;
+* no floating point;
+* simple comparisons;
+* simple ledger sums.
+
+Never use:
+
+```text
+float
+double
+JavaScript Number for arithmetic involving money
+```
+
+Frontend may format integer minor units into BDT strings.
+
+---
+
+# 18. Database schema
+
+## users
+
+```text
+id                  UUID
+name                varchar
+email               varchar UNIQUE
+password_hash       varchar
+status              enum/short varchar
+created_at          timestamptz
+updated_at          timestamptz
+```
+
+---
+
+## accounts
+
+```text
+id                  UUID
+user_id             UUID UNIQUE FK
+currency            char(3) = BDT
+balance_minor       BIGINT
+status              varchar
+created_at          timestamptz
+updated_at          timestamptz
+```
+
+Constraints:
+
+```text
+balance_minor >= 0
+```
+
+---
+
+## transfers
+
+```text
+id                  UUID
+public_reference    varchar UNIQUE
+sender_account_id   UUID FK
+receiver_account_id UUID FK
+amount_minor        BIGINT
+currency            char(3)
+type                varchar
+status              varchar
+reference           varchar nullable
+created_at          timestamptz
+completed_at        timestamptz
+```
+
+Constraints:
+
+```text
+amount_minor > 0
+sender_account_id != receiver_account_id
+```
+
+---
+
+## ledger_entries
+
+```text
+id                  UUID
+transfer_id         UUID FK
+account_id          UUID FK
+direction           DEBIT | CREDIT
+amount_minor        BIGINT
+created_at          timestamptz
+```
+
+Prefer append-only behavior.
+
+---
+
+## money_requests
+
+```text
+id                  UUID
+requester_account_id
+payer_account_id
+amount_minor
+reference
+status
+created_at
+resolved_at
+expires_at nullable
+```
+
+Statuses:
+
+```text
+PENDING
+PAID
+DECLINED
+EXPIRED
+CANCELLED
+```
+
+---
+
+## idempotency_records
+
+```text
+id
+user_id
+key
+request_hash
+resource_type
+resource_id
+http_status
+response_json
+created_at
+expires_at
+```
+
+---
+
+## audit_events
+
+```text
+id
+event_type
+actor_user_id
+resource_type
+resource_id
+trace_id
+metadata_json
+created_at
+```
+
+Examples:
+
+```text
+TRANSFER_COMPLETED
+TRANSFER_REJECTED
+INSUFFICIENT_FUNDS
+IDEMPOTENT_REPLAY
+LOGIN_FAILURE
+REQUEST_DECLINED
+INTEGRITY_CHECK_RUN
+```
+
+---
+
+# 19. Money Request
+
+Flow:
+
+```text
+Alice requests ৳1,200 from Bob
+
+             │
+             ▼
+          PENDING
+             │
+       ┌─────┴─────┐
+       ▼           ▼
+    Decline       Pay
+       │           │
+       ▼           ▼
+   DECLINED    TransferEngine
+                   │
+                   ▼
+                 PAID
+```
+
+A critical rule:
+
+> **MoneyRequestService never directly modifies account balances.**
+
+It delegates to the one authoritative transfer service.
+
+Your earlier BalanceLoop reference similarly emphasized explicit settlement semantics and full balance history, ideas that translate well to this request workflow. 
+
+---
+
+# 20. Money Request concurrency
+
+Suppose Bob double-clicks Pay.
+
+```text
+API-1                      API-3
+
+Pay request #123          Pay request #123
+       │                         │
+       ▼                         ▼
+LOCK request #123           waits
+       │
+status=PENDING
+       │
+execute transfer
+       │
+mark PAID
+       │
+COMMIT
+                                 │
+                                 ▼
+                          reads status=PAID
+                                 │
+                                 ▼
+                          return existing state
+```
+
+One payment.
+
+Not two.
+
+---
+
+# 21. Transaction states
+
+Avoid overcomplicating synchronous transfers.
+
+For P0:
+
+```text
+COMPLETED
+REVERSED
+```
+
+Rejected transfer attempts are primarily audit events rather than permanent financial transactions.
+
+Later asynchronous systems may introduce:
+
+```text
+CREATED
+PENDING
+PROCESSING
+COMPLETED
+FAILED
+```
+
+but that is unnecessary complexity for this synchronous internal-wallet transfer.
+
+---
+
+# 22. Reversal policy
+
+Never:
+
+```text
+DELETE TX-123
+```
+
+If a true reversal eventually occurs:
+
+```text
+TX-123
+Alice → Bob
+৳1,000
+
+TX-124
+Bob → Alice
+৳1,000
+REVERSAL_OF = TX-123
+```
+
+However, **ordinary users should not be able to forcibly reverse completed transfers** because the recipient may already have spent the funds.
+
+Therefore:
+
+### Hackathon
+
+Do not implement user Undo.
+
+### P2
+
+Implement:
+
+```text
+Request Refund
+```
+
+requiring recipient consent.
+
+### Administrative/future
+
+Compensating reversal with authorization and audit trail.
+
+---
+
+# 23. Deterministic policy layer
+
+Implement simple fake-system limits to demonstrate MFS-style policy enforcement.
+
+Example configurable values:
+
+```text
+Minimum transfer:
+৳1
+
+Maximum individual transfer:
+৳100,000
+
+Maximum daily outgoing:
+৳200,000
+
+Maximum transfers/day:
+50
+```
+
+Store configuration rather than scattering constants across code.
+
+Architecture:
+
+```text
+TransferService
+      │
+      ▼
+TransferPolicy
+      │
+      ├─ amount rule
+      ├─ daily amount rule
+      ├─ daily count
+      └─ account state
+```
+
+Nagad's public transaction-limit page reinforces the real-world importance of transaction amount and count constraints. ([Nagad][4])
+
+---
+
+# 24. Authentication and authorization
+
+For hackathon scope:
+
+```text
+Email + password
+       │
+       ▼
+Argon2id / bcrypt hash
+       │
+       ▼
+JWT access token
+```
+
+Never accept:
+
+```json
+{
+  "senderAccountId": "..."
+}
+```
+
+from the frontend.
+
+Derive:
+
+```text
+JWT user
+   │
+   ▼
+authenticated user's account
+```
+
+Otherwise users could attempt to spend another account's funds.
+
+---
+
+# 25. Security requirements
+
+### Must implement
+
+* password hashing;
+* JWT signature validation;
+* authorization;
+* request validation;
+* payload size limits;
+* CORS policy;
+* SQL parameterization/ORM safety;
+* no password in logs;
+* no JWT in logs;
+* no arbitrary sender IDs;
+* safe error responses;
+* rate limiting on login;
+* rate limiting on user search;
+* short transaction timeout;
+* audit suspicious/rejected actions.
+
+### Do not pretend to implement
+
+* production KYC;
+* AML;
+* PCI DSS;
+* HSM-backed key management;
+* regulatory compliance certification.
+
+The correct presentation is:
+
+> “This prototype uses security controls appropriate for a closed simulated wallet. Production financial deployment would require substantially stronger identity, compliance and operational controls.”
+
+---
+
+# 26. API error contract
+
+Every error should look predictable.
+
+```json
+{
+  "error": {
+    "code": "INSUFFICIENT_FUNDS",
+    "message": "You do not have enough available balance.",
+    "traceId": "01K..."
+  }
+}
+```
+
+Important domain codes:
+
+```text
+INVALID_AMOUNT
+INSUFFICIENT_FUNDS
+RECIPIENT_NOT_FOUND
+SELF_TRANSFER_NOT_ALLOWED
+TRANSFER_LIMIT_EXCEEDED
+
+REQUEST_NOT_FOUND
+REQUEST_ALREADY_RESOLVED
+
+IDEMPOTENCY_KEY_REQUIRED
+IDEMPOTENCY_KEY_REUSED
+
+UNAUTHENTICATED
+FORBIDDEN
+
+FINANCIAL_CORE_UNAVAILABLE
+INTERNAL_ERROR
+```
+
+Never send stack traces to clients.
+
+---
+
+# 27. REST API
+
+Use:
+
+```text
+/api/v1
+```
+
+## Auth
+
+```text
+POST /auth/register
+POST /auth/login
+GET  /auth/me
+```
+
+## Accounts
+
+```text
+GET /accounts/me
+```
+
+## Users
+
+```text
+GET /users/search?q=
+GET /users/{id}/recipient-preview
+```
+
+Preview returns only safe recipient information.
+
+## Transfers
+
+```text
+POST /transfers
+GET  /transfers
+GET  /transfers/{reference}
+```
+
+Header:
+
+```text
+Idempotency-Key
+```
+
+## Money requests
+
+```text
+POST /money-requests
+GET  /money-requests
+GET  /money-requests/{id}
+
+POST /money-requests/{id}/pay
+POST /money-requests/{id}/decline
+POST /money-requests/{id}/cancel
+```
+
+## Internal / engineering
+
+```text
+GET /health/live
+GET /health/ready
+
+GET /internal/integrity
+GET /internal/system-info
+```
+
+Protect internal endpoints appropriately in production; hackathon mode may expose a safe judge-facing subset.
+
+---
+
+# 28. Recommended application architecture
+
+## Modular monolith
+
+```text
+backend/
+│
+├── auth/
+│
+├── users/
+│
+├── accounts/
+│
+├── transfers/
+│
+├── ledger/
+│
+├── money-requests/
+│
+├── policies/
+│
+├── idempotency/
+│
+├── audit/
+│
+├── integrity/
+│
+└── common/
+```
+
+Do **not** build microservices.
+
+Your brainstorm already reached the correct conclusion: a modular monolith avoids service discovery, network calls, distributed transactions and other complexity that provides no benefit during this hackathon. 
+
+---
+
+# 29. SOLID rules
+
+### Single Responsibility
+
+```text
+TransferService
+→ money movement
+
+LedgerService
+→ financial journal
+
+MoneyRequestService
+→ request lifecycle
+
+IntegrityService
+→ reconciliation
+```
+
+### Open/Closed
+
+Policies should be extensible without rewriting transfer orchestration.
+
+### Interface Segregation
+
+Avoid one enormous:
+
+```text
+FinancialService
+```
+
+### Dependency Inversion
+
+Domain/application services depend on repository abstractions, not controllers.
+
+But:
+
+> Do not create interfaces solely so the architecture diagram looks sophisticated.
+
+---
+
+# 30. Recommended technology stack
+
+## Frontend
+
+```text
+Next.js
+TypeScript
+Tailwind CSS
+shadcn/ui
+React Hook Form
+Zod
+PWA service worker
+```
+
+## Backend — recommended default
+
+If both team members are comfortable with TypeScript:
+
+```text
+NestJS
+TypeScript
+PostgreSQL driver / lightweight SQL layer
+Zod/class-validator
+JWT
+Argon2
+```
+
+For the critical transfer transaction, explicit SQL is perfectly acceptable and may actually be clearer than hiding locking behavior behind an ORM.
+
+If the team is considerably stronger in Java:
+
+```text
+Spring Boot
+Spring Web
+Spring Security
+JPA / JDBC
+PostgreSQL
+```
+
+The architecture and requirements remain identical.
+
+---
+
+# 31. Docker topology
+
+```text
+                       Browser
+                          │
+                          ▼
+                      Frontend
+                      Next.js
+                          │
+                          ▼
+                  HAProxy / Nginx
+                          │
+             ┌────────────┼────────────┐
+             ▼            ▼            ▼
+          API-1        API-2        API-3
+             │            │            │
+             └────────────┼────────────┘
+                          │
+                          ▼
+                      PostgreSQL
+                    FINANCIAL TRUTH
+                          │
+                     Ledger/Data
+
+             Redis — optional P1
+
+                         k6
+                          │
+                          ▼
+                      Gateway
+
+                     Toxiproxy
+                  chaos profile only
+```
+
+---
+
+# 32. Why three backend replicas?
+
+Not to claim:
+
+> “We support 10 million users.”
+
+Instead prove:
+
+> “Application instances are stateless. Financial correctness does not depend on which application process receives the request.”
+
+Request 1 can hit:
+
+```text
+API-1
+```
+
+while request 2 hits:
+
+```text
+API-3
+```
+
+and PostgreSQL still controls the account locks.
+
+This is the scalable architectural property you actually need to demonstrate.
+
+---
+
+# 33. Gateway
+
+Use HAProxy or Nginx.
+
+Requirements:
+
+* round-robin backend routing;
+* `/health/ready` checks;
+* stop sending traffic to unhealthy backend;
+* propagate request/trace ID;
+* don't blindly replay money-changing POST requests.
+
+The client should deliberately retry with the **same idempotency key**.
+
+---
+
+# 34. Redis decision
+
+## P0
+
+Do not require Redis.
+
+## P1
+
+Use Redis only for:
+
+```text
+distributed rate limit counters
+optional short-lived safe caches
+```
+
+Never store authoritative:
+
+```text
+balance
+ledger
+transfer completion
+```
+
+If Redis dies:
+
+```text
+financial correctness must remain intact
+```
+
+That gives you graceful degradation.
+
+---
+
+# 35. PWA offline policy
+
+BalanceLoop's offline-first design shows the value of keeping history and actions resilient under connectivity problems, but because our application actually moves money, offline semantics must be stricter. BalanceLoop can queue settlements and synchronize later without double-counting; our application should never claim a financial transfer completed without server authority. 
+
+## Recommended hackathon policy
+
+When online:
+
+```text
+Full application
+```
+
+When offline:
+
+```text
+App shell                     ✓
+
+previous history              ✓
+
+last known balance            ✓
+"Last updated 10:42"
+
+Send money                    ✗
+
+Pay request                   ✗
+```
+
+Display:
+
+> You're offline. Reconnect before sending money securely.
+
+M-PESA has publicly explored offline-oriented app functionality, showing that poor connectivity is a legitimate mobile-money UX concern, but our prototype should use a safer read-only offline model rather than attempt deferred money execution. ([Safaricom][9])
+
+---
+
+# 36. Financial invariants
+
+These should be written down in your README and tests.
+
+### Invariant 1
+
+```text
+account.balance_minor >= 0
+```
+
+### Invariant 2
+
+```text
+transfer.amount_minor > 0
+```
+
+### Invariant 3
+
+```text
+sender != receiver
+```
+
+### Invariant 4
+
+For every completed transfer:
+
+```text
+debit amount
+=
+credit amount
+```
+
+### Invariant 5
+
+```text
+SUM(ledger signed amounts for transfer)
+=
+0
+```
+
+### Invariant 6
+
+A completed transfer has exactly:
+
+```text
+1 debit entry
+1 credit entry
+```
+
+for ordinary P2P transfer.
+
+### Invariant 7
+
+One logical idempotency key can create at most one financial resource.
+
+### Invariant 8
+
+One money request can be paid at most once.
+
+### Invariant 9
+
+```text
+sum(user balances)
+=
+net amount issued by system
+```
+
+for the closed ecosystem.
+
+### Invariant 10
+
+There is no completed transfer without an auditable reference.
+
+---
+
+# 37. Reconciliation / Money Integrity service
+
+Create:
+
+```text
+GET /internal/integrity
+```
+
+Response:
+
+```json
+{
+  "status": "PASS",
+  "negativeAccounts": 0,
+  "unbalancedTransfers": 0,
+  "missingLedgerEntries": 0,
+  "duplicateFinancialOperations": 0,
+  "issuedFundsMinor": 1000000000,
+  "walletFundsMinor": 1000000000,
+  "differenceMinor": 0
+}
+```
+
+This makes invisible backend correctness visible.
+
+---
+
+# 38. Engineering dashboard
+
+A minimal judge-facing screen:
+
+```text
+SYSTEM INTEGRITY
+
+API Replicas
+3 / 3 healthy
+
+────────────────────
+
+Completed Transfers
+1,420
+
+Idempotent Replays
+203
+
+Rejected Overspends
+18
+
+────────────────────
+
+Negative Accounts
+0
+
+Unbalanced Transfers
+0
+
+Missing Ledger Entries
+0
+
+Money Difference
+৳0.00
+
+────────────────────
+
+INTEGRITY
+
+✓ PASS
+```
+
+Only display real values obtained from the backend.
+
+Never fake metrics.
+
+The original brainstorm's idea to expose actual integrity status is especially strong because it converts claims about concurrency and money conservation into observable proof. 
+
+---
+
+# 39. Health checks
+
+## Liveness
+
+```text
+GET /health/live
+```
+
+Question:
+
+> Is this process running?
+
+Do not depend on PostgreSQL.
+
+---
+
+## Readiness
+
+```text
+GET /health/ready
+```
+
+Question:
+
+> Can this instance safely accept normal application traffic?
+
+May check:
+
+```text
+database connectivity
+migration readiness
+```
+
+Gateway routes only to ready instances.
+
+---
+
+# 40. Failure semantics
+
+| Failure                                 | Required result               |
+| --------------------------------------- | ----------------------------- |
+| Invalid input                           | 400, no transaction           |
+| Unauthorized user                       | 401/403                       |
+| Insufficient balance                    | reject, no money changed      |
+| Duplicate request                       | return original transaction   |
+| Same idempotency key, different request | 409                           |
+| API dies before DB transaction          | retry safely                  |
+| API dies before commit                  | DB rollback                   |
+| API dies after commit                   | retry returns existing result |
+| Receiver update fails                   | full rollback                 |
+| Ledger insert fails                     | full rollback                 |
+| PostgreSQL unavailable                  | fail closed                   |
+| Redis unavailable                       | money engine still correct    |
+| One API replica dies                    | gateway routes to others      |
+| Deadlock                                | DB abort + bounded retry      |
+| Browser goes offline                    | don't claim success           |
+
+---
+
+# 41. Observability
+
+Keep it lightweight.
+
+Every request gets:
+
+```text
+trace_id
+```
+
+Logs should include:
+
+```text
+timestamp
+level
+instance_id
+trace_id
+user_id
+operation
+transaction_reference
+result
+latency_ms
+```
+
+Never log:
+
+```text
+password
+JWT
+password hash
+secret
+```
+
+For transfer:
+
+```text
+instance=api-2
+trace=01K...
+operation=TRANSFER
+reference=TX-...
+result=COMPLETED
+duration=38ms
+```
+
+Showing different `instance_id`s is also a simple way to prove requests are reaching several replicas.
+
+---
+
+# 42. Local failure lab
+
+This should be a major part of the project.
+
+Toxiproxy is specifically designed to simulate latency, broken/down connections and other network conditions in testing/development environments and is available as a container. ([GitHub][10])
+
+Run it only under a chaos/testing Docker profile.
+
+```text
+NORMAL
+
+API → PostgreSQL
+
+
+CHAOS
+
+API → Toxiproxy → PostgreSQL
+```
+
+---
+
+# 43. k6 Transaction Stress Lab
+
+k6 supports local execution and Docker execution with multiple virtual users, making it a very good fit for your local-only demo environment. ([Grafana Labs][11])
+
+Recommended scripts:
+
+```text
+tests/k6/
+
+01-normal.js
+
+02-idempotency-storm.js
+
+03-double-spend.js
+
+04-opposite-direction.js
+
+05-request-double-pay.js
+
+06-horizontal-load.js
+
+07-api-failure.js
+
+08-db-latency.js
+```
+
+---
+
+# 44. Stress scenario 1 — idempotency storm
+
+Send:
+
+```text
+50 concurrent POST requests
+same sender
+same recipient
+same amount
+same idempotency key
+```
+
+Expected:
+
+```text
+HTTP requests             50
+
+Financial transfers        1
+
+Debit ledger entries       1
+
+Credit ledger entries      1
+
+Money moved             ৳500
+```
+
+Not:
+
+```text
+৳25,000
+```
+
+This mirrors exactly why mature payment APIs expose idempotency mechanisms. ([PayPal Developer][12])
+
+---
+
+# 45. Stress scenario 2 — double spend
+
+Starting:
+
+```text
+Alice
+৳100,000
+```
+
+Simultaneously:
+
+```text
+Alice → Bob
+৳80,000
+
+Alice → Charlie
+৳80,000
+```
+
+Expected:
+
+```text
+success                  1
+
+insufficient funds       1
+
+Alice final
+৳20,000
+
+negative accounts        0
+```
+
+---
+
+# 46. Stress scenario 3 — deadlock pressure
+
+Repeated simultaneous:
+
+```text
+Alice → Bob
+
+Bob → Alice
+```
+
+Expected:
+
+```text
+corrupt transfers        0
+
+unbalanced ledger        0
+
+negative balances        0
+```
+
+Lock both accounts in deterministic ID order.
+
+---
+
+# 47. Stress scenario 4 — request double-pay
+
+Submit:
+
+```text
+POST /money-requests/123/pay
+```
+
+20 times.
+
+Expected:
+
+```text
+financial transfers      1
+
+request status           PAID
+```
+
+---
+
+# 48. Stress scenario 5 — horizontal execution
+
+Scale backend:
+
+```text
+3 replicas
+```
+
+Run 100–500 transfers across seeded accounts.
+
+Confirm log distribution:
+
+```text
+api-1
+api-2
+api-3
+```
+
+Then integrity:
+
+```text
+PASS
+```
+
+The goal is not enormous TPS.
+
+The goal is:
+
+> correctness is independent of backend instance.
+
+---
+
+# 49. Stress scenario 6 — kill API instance
+
+While traffic is running:
+
+```text
+docker stop api-2
+```
+
+Expected:
+
+```text
+api-1   healthy
+api-2   down
+api-3   healthy
+```
+
+Gateway removes API-2.
+
+New traffic continues.
+
+Committed money remains correct.
+
+---
+
+# 50. Stress scenario 7 — atomicity failure injection
+
+In test mode only:
+
+```text
+FAIL_AFTER_DEBIT=true
+```
+
+Execution:
+
+```text
+BEGIN
+
+debit Alice
+
+throw exception
+
+ROLLBACK
+```
+
+Then verify:
+
+```text
+Alice unchanged
+Bob unchanged
+
+transfer absent
+
+ledger absent
+```
+
+This is probably your strongest demonstration of **A in ACID**.
+
+---
+
+# 51. Stress scenario 8 — database failure
+
+Via Toxiproxy:
+
+```text
+PostgreSQL connection
+DOWN
+```
+
+Transfer response:
+
+```text
+503
+
+FINANCIAL_CORE_UNAVAILABLE
+```
+
+User message:
+
+> Transfers are temporarily unavailable. No money was moved.
+
+Restore connection.
+
+Run integrity.
+
+```text
+PASS
+```
+
+---
+
+# 52. Stress scenario 9 — database latency
+
+Inject:
+
+```text
+2000 ms
+```
+
+database delay.
+
+Expected:
+
+```text
+system slower
+```
+
+but:
+
+```text
+no duplicates
+no corruption
+no money mismatch
+```
+
+That's the difference between:
+
+```text
+performance degradation
+```
+
+and:
+
+```text
+correctness degradation
+```
+
+Correctness must survive.
+
+---
+
+# 53. Testing strategy
+
+## Unit tests
+
+Test:
+
+```text
+money conversion
+amount validation
+self transfer
+policy rules
+request transitions
+request hashing
+reference generation
+```
+
+## Integration tests
+
+Use real PostgreSQL, preferably containerized.
+
+Test:
+
+```text
+transfer transaction
+rollback
+ledger entries
+idempotency
+concurrent locking
+request payment
+```
+
+## Concurrency tests
+
+Must hit a real DB.
+
+Mock repositories cannot prove database concurrency behavior.
+
+## Invariant tests
+
+After complex test:
+
+```text
+run reconciliation
+```
+
+Require:
+
+```text
+PASS
+```
+
+## Load tests
+
+Use k6.
+
+Grafana describes k6 as an open-source tool for reliability and load/performance testing, including stress and spike workloads. ([Grafana Labs][13])
+
+---
+
+# 54. Performance goals for hackathon
+
+Don't promise massive numbers.
+
+Use reasonable local SLOs.
+
+Example under normal local conditions:
+
+```text
+p95 read API
+< 300 ms
+
+p95 transfer
+< 500 ms
+
+error rate under valid moderate load
+< 1%
+
+financial correctness violations
+0
+```
+
+A financial correctness violation has a much stricter target:
+
+```text
+ZERO
+```
+
+---
+
+# 55. Frontend screens
+
+Keep it to roughly:
+
+```text
+1. Login
+
+2. Register
+
+3. Dashboard
+
+4. Send Money
+
+5. Request Money / Requests
+
+6. Transaction History
+
+7. Transaction Receipt
+
+8. System Integrity
+```
+
+That is enough.
+
+---
+
+# 56. Dashboard
+
+```text
+Good morning, Alice
+
+Available Balance
+৳97,500.00
+
+[ Send Money ]
+[ Request Money ]
+
+─────────────────────
+
+Pending requests
+
+Rahim
+৳1,200
+
+[Pay] [Decline]
+
+─────────────────────
+
+Recent activity
+
+↓ Salman
++৳5,000
+
+↑ Bob
+-৳2,500
+
+↑ Charlie
+-৳500
+```
+
+No elaborate charts needed.
+
+---
+
+# 57. UX rules
+
+* BDT amount always formatted consistently.
+* Disable Send button while request is being submitted.
+* Still use backend idempotency; disabled UI is not financial protection.
+* Always identify recipient clearly.
+* Always confirm transfer.
+* Always return transaction reference.
+* Distinguish positive and negative money movements visually.
+* Never show success before backend returns authoritative completion.
+* Never use vague “Something happened” language for money operations.
+* Show stale timestamp when displaying cached data.
+* Make touch targets mobile friendly.
+* Support keyboard navigation.
+
+---
+
+# 58. Docker Compose profile
+
+Normal:
+
+```text
+web
+gateway
+api
+postgres
+```
+
+Optional:
+
+```text
+redis
+```
+
+Testing profile:
+
+```text
+k6
+toxiproxy
+```
+
+Conceptually:
+
+```bash
+docker compose up
+```
+
+for normal demo.
+
+And:
+
+```bash
+docker compose --profile chaos up
+```
+
+for reliability testing.
+
+---
+
+# 59. Repository layout
+
+```text
+/
+├── apps/
+│   ├── web/
+│   └── api/
+│
+├── packages/
+│   └── shared/
+│
+├── infra/
+│   ├── haproxy/
+│   └── toxiproxy/
+│
+├── tests/
+│   └── k6/
+│
+├── docker-compose.yml
+│
+├── README.md
+└── docs/
+    ├── architecture.md
+    └── demo.md
+```
+
+Keep everything in one repository.
+
+---
+
+# 60. Acceptance criteria
+
+The MVP is ready only when all of these are true:
+
+| Requirement                                               | Pass |
+| --------------------------------------------------------- | ---: |
+| New account receives correct initial amount               |    ☐ |
+| User cannot transfer zero/negative amount                 |    ☐ |
+| User cannot transfer to self                              |    ☐ |
+| User cannot overspend                                     |    ☐ |
+| Normal transfer debits/credits correctly                  |    ☐ |
+| Transfer produces two balanced ledger entries             |    ☐ |
+| Transfer has unique reference                             |    ☐ |
+| Transaction history works                                 |    ☐ |
+| Same idempotency request repeated creates one transfer    |    ☐ |
+| Different payload with reused key rejected                |    ☐ |
+| Concurrent double-spend cannot make balance negative      |    ☐ |
+| Opposite transfers do not corrupt funds                   |    ☐ |
+| Money request works                                       |    ☐ |
+| Request can be paid only once                             |    ☐ |
+| Database exception rolls back everything                  |    ☐ |
+| API replica can be stopped without losing committed state |    ☐ |
+| DB outage fails closed                                    |    ☐ |
+| Integrity endpoint reports zero discrepancies             |    ☐ |
+| Entire stack starts with Docker                           |    ☐ |
+
+---
+
+# 61. Six-hour execution plan
+
+## Person A — Money core / backend
+
+### 0:00–0:30
+
+Freeze:
+
+```text
+schema
+API contract
+invariants
+module boundaries
+```
+
+Build Docker/Postgres.
+
+### 0:30–1:30
+
+Implement:
+
+```text
+users
+accounts
+registration
+login
+initial funding
+```
+
+### 1:30–2:45
+
+Implement the crown jewel:
+
+```text
+transfer
+DB transaction
+locking
+ledger
+```
+
+### 2:45–3:30
+
+Implement:
+
+```text
+idempotency
+```
+
+plus tests.
+
+### 3:30–4:15
+
+Implement:
+
+```text
+money requests
+pay locking
+```
+
+### 4:15–5:00
+
+Implement:
+
+```text
+integrity checks
+failure injection
+audit logs
+```
+
+### 5:00–6:00
+
+Stress tests, bug fixes, demo.
+
+---
+
+## Person B — Frontend + infrastructure
+
+### 0:00–0:30
+
+Next.js/shadcn setup.
+
+Agree on APIs.
+
+### 0:30–1:30
+
+Register/login/dashboard.
+
+### 1:30–2:30
+
+Send-money flow.
+
+### 2:30–3:15
+
+History/receipts.
+
+### 3:15–4:00
+
+Money requests.
+
+### 4:00–4:45
+
+Gateway + replicas + Docker polishing.
+
+### 4:45–5:30
+
+Integrity dashboard + k6 scripts.
+
+### 5:30–6:00
+
+Demo polish and testing.
+
+Both developers help with critical backend failures after hour 4.
+
+---
+
+# 62. Scope-cut strategy
+
+If time runs short, cut in this order:
+
+```text
+dark mode
+↓
+Bangla
+↓
+notifications
+↓
+Redis
+↓
+limits beyond simple maximum
+↓
+reversal/refund
+↓
+Toxiproxy UI integration
+```
+
+Never cut:
+
+```text
+ACID transaction
+
+locking
+
+idempotency
+
+ledger
+
+request double-pay protection
+
+integrity test
+```
+
+Those are the project.
+
+---
+
+# 63. Judge demo
+
+Your demo should be extremely deliberate.
+
+### Demo 1 — normal user experience
+
+Register Alice and Bob.
+
+```text
+Alice
+৳100,000
+
+Bob
+৳100,000
+```
+
+Alice sends:
+
+```text
+৳5,000
+```
+
+Show receipt.
+
+---
+
+### Demo 2 — ledger
+
+Show:
+
+```text
+Alice       -৳5,000
+
+Bob         +৳5,000
+```
+
+and transaction ID.
+
+---
+
+### Demo 3 — retry safety
+
+Run:
+
+```text
+50 simultaneous requests
+same idempotency key
+```
+
+Result:
+
+```text
+1 financial transfer
+49 replays
+```
+
+---
+
+### Demo 4 — double spend
+
+Alice:
+
+```text
+৳100,000
+```
+
+Simultaneously request:
+
+```text
+৳80,000
+৳80,000
+```
+
+Result:
+
+```text
+one success
+
+one insufficient funds
+```
+
+---
+
+### Demo 5 — scale-out
+
+Show three APIs.
+
+Run traffic.
+
+Stop one.
+
+Application continues.
+
+---
+
+### Demo 6 — ACID failure
+
+Inject exception after debit.
+
+Show:
+
+```text
+both balances unchanged
+```
+
+---
+
+### Demo 7 — integrity dashboard
+
+Final screen:
+
+```text
+Negative balances       0
+
+Unbalanced journals     0
+
+Duplicate payments      0
+
+Missing ledger entries  0
+
+Money discrepancy       ৳0
+
+INTEGRITY                PASS
+```
+
+Then finish.
+
+---
+
+# 64. The scalability story
+
+The problem talks about growth, but don't claim that the hackathon system itself supports nationwide MFS scale.
+
+Say:
+
+> **Our prototype validates the architectural properties required to scale: stateless application instances, centralized transactional authority, explicit concurrency control, immutable financial records and retry-safe APIs.**
+
+At larger scale:
+
+```text
+Today
+
+HAProxy
+   │
+3 APIs
+   │
+PostgreSQL
+```
+
+could evolve to:
+
+```text
+Global/Regional Gateway
+         │
+Autoscaled API fleet
+         │
+Financial transaction tier
+         │
+Highly available relational DB
+         │
+Read replicas
+         │
+Partitioning
+```
+
+Async side effects become:
+
+```text
+Transfer committed
+       │
+Transactional outbox
+       │
+Queue
+ ┌─────┼─────────┐
+ ▼     ▼         ▼
+Email Analytics Fraud
+```
+
+but the queue does **not** decide whether the money moved.
+
+---
+
+# 65. Path toward 10M+ users
+
+### Application tier
+
+Already stateless.
+
+Scale horizontally.
+
+### User lookup
+
+Indexes.
+
+Eventually partitions/search system if necessary.
+
+### Transfer history
+
+Index:
+
+```text
+(account_id, created_at DESC)
+```
+
+Eventually ledger/history partitioned by time or account key.
+
+### Database
+
+Hackathon:
+
+```text
+single PostgreSQL writer
+```
+
+Production:
+
+```text
+HA primary + standby
+automatic failover
+read replicas
+backups
+point-in-time recovery
+```
+
+### Caching
+
+Cache only non-authoritative reads.
+
+### Events
+
+Transactional outbox for:
+
+```text
+notifications
+analytics
+fraud signals
+```
+
+### Observability
+
+Eventually:
+
+```text
+OpenTelemetry
+Prometheus
+Grafana
+centralized logs
+alerts
+SLOs
+```
+
+---
+
+# 66. Architectural trade-off: consistency vs availability
+
+Your money core should intentionally favor:
+
+```text
+CONSISTENCY
+```
+
+when authoritative storage is unavailable.
+
+If PostgreSQL fails:
+
+```text
+Transfers unavailable
+```
+
+instead of:
+
+```text
+Use cached balance and hope
+```
+
+For financial software, that is a feature—not a weakness.
+
+---
+
+# 67. Architecture summary
+
+```text
+                         Next.js PWA
+                              │
+                              ▼
+                       HAProxy/Nginx
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+           API-1           API-2           API-3
+              │               │               │
+              └───────────────┼───────────────┘
+                              │
+                              ▼
+                         PostgreSQL
+                       SOURCE OF TRUTH
+                              │
+            ┌─────────────────┼─────────────────┐
+            ▼                 ▼                 ▼
+         Accounts          Transfers          Ledger
+            │                                   │
+            │                                   ▼
+            │                           Reconciliation
+            │
+            └──────────── Money Requests
+
+
+                      Optional Redis
+                              │
+                 Non-authoritative only
+
+
+                 k6 + Toxiproxy + Docker
+                              │
+                              ▼
+                    Reliability Proof
+```
+
+---
+
+# 68. The architectural rule I would put at the top of the codebase
+
+> ## **There is exactly one authoritative path for moving money.**
+
+```text
+                 Transfer Engine
+                       │
+                       ▼
+                 Account Locks
+                       │
+                       ▼
+                  ACID Commit
+                       │
+            ┌──────────┴─────────┐
+            ▼                    ▼
+         Balances              Ledger
+```
+
+Everything else calls it.
+
+```text
+Direct Send ──────────────┐
+                          │
+Request Pay ──────────────┼──► Transfer Engine
+                          │
+Future Refund ────────────┤
+                          │
+Future Admin Reversal ────┘
+```
+
+No other service gets to modify financial balances.
+
+---
+
+# 69. Final feature set I recommend freezing
+
+For the actual hackathon build, I would now stop adding product ideas and freeze the system around these capabilities:
+
+1. **Secure account + simulated funding**
+2. **Send Money**
+3. **Request Money**
+4. **Transaction history + receipt**
+5. **ACID transfers**
+6. **Pessimistic row locking**
+7. **Deterministic lock ordering**
+8. **Payment-grade idempotency**
+9. **Double-entry ledger**
+10. **Immutable audit trail**
+11. **Request double-payment protection**
+12. **Financial reconciliation/invariant engine**
+13. **Three stateless Docker API replicas**
+14. **Health-checked local load balancing**
+15. **k6 concurrency/stress lab**
+16. **Failure injection / rollback proof**
+17. **Read-only PWA offline behavior**
+18. **Simple judge-facing System Integrity dashboard**
+
+This is already a **very substantial six-hour project**. The key is that its sophistication comes from the depth of the implementation rather than from having dozens of visible features.
+
+Your original brainstorm phrased the strategy especially well: **“small surface area, extremely well-engineered core.”** 
+
+## Final pitch
+
+> **We built a trustworthy money-movement system inspired by the reliability requirements of large mobile financial services. The application itself is intentionally simple, but every transfer is atomic, concurrency-safe, idempotent and auditable. We then run multiple stateless backend replicas locally with Docker and deliberately subject the platform to duplicate requests, simultaneous spending, server failure and network faults. After every scenario, an independent reconciliation engine proves that no account went negative, no transfer was duplicated and no money was created or lost.**
+
+That should be the product definition you build against.
+
+[1]: https://www.bkash.com/index.php/en/about?utm_source=chatgpt.com "About | bKash"
+[2]: https://www.bkash.com/en/products-services/send-money?utm_source=chatgpt.com "Send Money | bKash"
+[3]: https://www.bkash.com/products-services/request-money?utm_source=chatgpt.com "রিকোয়েস্ট মানি | বিকাশ"
+[4]: https://nagad.com.bd/en/limit-charges/?utm_source=chatgpt.com "Nagad"
+[5]: https://developer.paypal.com/api/rest/reference/idempotency/?utm_source=chatgpt.com "Idempotency"
+[6]: https://docs.stripe.com/api/idempotent_requests?lang=curl&utm_source=chatgpt.com "Idempotent requests | Stripe API Reference"
+[7]: https://www.postgresql.org/docs/current/sql-select.html?utm_source=chatgpt.com "PostgreSQL: Documentation: 18: SELECT"
+[8]: https://www.postgresql.org/docs/17/explicit-locking.html?utm_source=chatgpt.com "PostgreSQL: Documentation: 17: 13.3. Explicit Locking"
+[9]: https://www.safaricom.co.ke/annualreport_2022/download-pdf/iar-2022.pdf?utm_source=chatgpt.com "In partnership with Gulf African Bank, we launched Halal Pesa, a Shari’ah-compliant mobile financing solution. Halal Pesa is the first Shari’ah-compliant mobile and digital financial solution in the country."
+[10]: https://github.com/Shopify/toxiproxy/blob/main/README.md?utm_source=chatgpt.com "toxiproxy/README.md at main · Shopify/toxiproxy · GitHub"
+[11]: https://grafana.com/docs/k6/latest/get-started/running-k6/?utm_source=chatgpt.com "Running k6 | Grafana k6 documentation"
+[12]: https://developer.paypal.com/reference/guidelines/idempotency/?utm_source=chatgpt.com "Idempotency"
+[13]: https://grafana.com/docs/k6/latest/?utm_source=chatgpt.com "Grafana k6 | Grafana k6 documentation"

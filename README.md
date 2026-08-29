@@ -2,7 +2,7 @@
 
 > A closed-loop, simulated BDT money platform built to prove that every taka moves atomically, exactly once, and remains auditable under retries, concurrency, and application failure.
 
-[API contract](docs/api-contract.md) · [Domain language](CONTEXT.md) · [Frontend specification](docs/frontend-screens.md) · [Reliability lab](tests/k6/README.md) · [Azure deployment](infra/azure/DEPLOY.md)
+[Five-minute setup](#run-locally) · [Codebase tour](docs/codebase-tour.md) · [API contract](docs/api-contract.md) · [Frontend integration](docs/frontend-integration.md) · [Reliability guide](docs/testing-and-reliability.md)
 
 ## Table of contents
 
@@ -57,9 +57,10 @@ All authoritative amounts are integers in **poisha**. One taka is 100 poisha, so
 | Deterministic Step-Up rules | Implemented | Amount, first-recipient, and velocity rules |
 | Integrity report | Implemented | Five live, uncached financial assertions |
 | Three API replicas and nginx gateway | Implemented | Local Docker Compose topology |
-| k6 reliability laboratory | Implemented | Five executable scenarios; see the test runbook for current evidence status |
+| k6 reliability laboratory | Verified | Six scenarios pass against a clean three-replica stack |
 | Next.js PWA and integrity dashboard UI | Specified | Screen and component contracts are in `docs/frontend-screens.md` |
-| Money Requests, consent-based Reversals | Planned | Design is recorded; persistence and endpoints are not implemented |
+| Money Requests | Implemented | Create, list, inspect, pay, decline, cancel, expiry, and concurrent-payment safety |
+| Consent-based Reversals | Deferred | Frontend action must remain hidden for this release |
 | Notifications and scheduled Transfers | Planned | Must route financial effects through the existing Transfer engine |
 | Production HTTPS deployment | Prepared | Compose, Caddy, and Azure instructions exist; final verification is pending |
 
@@ -129,10 +130,12 @@ Every successful commit preserves these rules:
 - Verify a recipient by full name and masked phone without exposing IDs or balances.
 - List up to six recent recipients.
 - Send a one-to-one or Group Transfer with an `Idempotency-Key`.
+- Create, list, pay, decline, and cancel 24-hour Money Requests.
 - Enforce per-Transfer and Dhaka-calendar-day limits.
 - Require Step-Up for large, first-time, or high-velocity Transfers.
 - Read signed sent/received history and a reference-addressed Transfer detail.
 - Query liveness, database readiness, live policy, observed replicas, and Ledger integrity.
+- Enforce shared login/lookup/request rate limits, request-size bounds, and replica heartbeats.
 
 ### Explicit non-goals
 
@@ -201,6 +204,7 @@ In local development, nginx is published at `http://localhost:8080` and PostgreS
 | Router layer | HTTP parsing, authentication dependency, response shape, rejection auditing | Move balances directly |
 | `services/transfer.py` | Resolve recipients, enforce policy, lock Accounts, orchestrate one atomic Transfer | Commit outside its caller's transaction |
 | `services/ledger.py` | Create Transfer and Journal Entry rows, update cached balances, acquire ordered locks | Accept unbalanced legs |
+| `services/money_requests.py` | Own request lifecycle and delegate payment to the Transfer service | Create a second money path |
 | `idempotency.py` | Reserve a per-User key and store/replay the committed response | Guess an uncertain result |
 | `policy.py` | Apply amount, daily, and deterministic Step-Up rules | Use an opaque model |
 | `services/integrity.py` | Compute live reconciliation assertions and counters | Cache a verdict |
@@ -309,6 +313,9 @@ erDiagram
     ACCOUNTS ||--o{ TRANSFERS : sends
     TRANSFERS ||--|{ JOURNAL_ENTRIES : contains
     ACCOUNTS ||--o{ JOURNAL_ENTRIES : receives
+    ACCOUNTS ||--o{ MONEY_REQUESTS : requests
+    ACCOUNTS ||--o{ MONEY_REQUESTS : pays
+    MONEY_REQUESTS o|--o| TRANSFERS : settles_as
     TRANSFERS o|--o{ TRANSFERS : compensates
 
     USERS {
@@ -354,6 +361,16 @@ erDiagram
         uuid resource_id
         integer status_code
         jsonb response_body
+    }
+    MONEY_REQUESTS {
+        uuid id PK
+        varchar public_reference UK
+        uuid requester_account_id FK
+        uuid payer_account_id FK
+        bigint amount_poisha
+        varchar status
+        uuid transfer_id FK
+        timestamptz expires_at
     }
 ```
 
@@ -412,7 +429,7 @@ Interactive OpenAPI documentation: `http://localhost:8080/api/v1/docs`
 ### Conventions
 
 - Send `Authorization: Bearer <jwt>` except for registration, login, liveness, readiness, integrity, and system info.
-- Send a stable `Idempotency-Key` on `POST /transfers`; reuse it when retrying the same intention.
+- Send a stable `Idempotency-Key` on Transfer creation, Money Request creation, and payment; reuse it when retrying the same intention.
 - Requests accept camelCase and snake_case aliases where defined. Responses use camelCase.
 - Amounts are integer poisha.
 - The authenticated token determines the sender.
@@ -433,10 +450,16 @@ Interactive OpenAPI documentation: `http://localhost:8080/api/v1/docs`
 | `POST` | `/transfers` | Yes | Commit a one-to-one or Group Transfer |
 | `GET` | `/transfers` | Yes | List signed Account history; optional direction filter |
 | `GET` | `/transfers/{reference}` | Yes | Read one visible Transfer detail |
+| `POST` | `/money-requests` | Yes | Create a 24-hour request for payment |
+| `GET` | `/money-requests` | Yes | List incoming/outgoing requests by lifecycle status |
+| `GET` | `/money-requests/{id}` | Yes | Read one authorized request |
+| `POST` | `/money-requests/{id}/pay` | Yes | Settle through the normal Transfer engine |
+| `POST` | `/money-requests/{id}/decline` | Yes | Payer declines a pending request |
+| `POST` | `/money-requests/{id}/cancel` | Yes | Requester cancels a pending request |
 | `GET` | `/health/live` | No | Check the API process without touching PostgreSQL |
 | `GET` | `/health/ready` | No | Check that the API can reach PostgreSQL |
 | `GET` | `/integrity` | No | Run five live financial assertions |
-| `GET` | `/system-info` | No | Read live policy and observed replica starts |
+| `GET` | `/system-info` | No | Read live policy and fresh replica heartbeats |
 
 ### Minimal request examples
 
@@ -518,8 +541,8 @@ docker compose up -d --build
 # Stop containers while preserving PostgreSQL data
 docker compose down
 
-# Destructive local reset: removes all simulated Users, Transfers, and Ledger data
-docker compose down -v
+# Start an empty, ephemeral three-replica test stack on port 18080
+docker compose -f docker-compose.test.yml up -d --build --wait
 ```
 
 The optional `web` profile is reserved for the Next.js application. It cannot be built until `web/` contains that application.
@@ -532,6 +555,7 @@ The regression suite uses real PostgreSQL because mocks cannot prove locking, id
 
 ```bash
 docker compose exec -T api python -m unittest discover -s tests -v
+docker compose -f docker-compose.test.yml --profile verify run --rm acceptance
 ```
 
 Money-path changes must add a regression at the real seam and finish with:
@@ -549,11 +573,13 @@ flowchart LR
     s3[Opposite and Group pressure] --> p3[No deadlock corruption]
     s4[Sustained multi-replica load] --> p4[Balanced Ledger]
     s5[Replica SIGKILL] --> p5[No money lost]
+    s6[Request pay storm ×50] --> p6[Exactly one Transfer]
     p1 --> integrity[Final Integrity Check]
     p2 --> integrity
     p3 --> integrity
     p4 --> integrity
     p5 --> integrity
+    p6 --> integrity
 ```
 
 Run one local scenario:
@@ -571,6 +597,7 @@ Available scenarios:
 | `03-deadlock-pressure.js` | Opposite and Group traffic obey global lock ordering | No corruption or deadlock failure |
 | `04-sustained-load.js` | All three stateless replicas can serve sustained traffic | Multiple instances observed and final Ledger healthy |
 | `05-replica-kill.js` | Killing an API process does not lose committed money | Pool total unchanged and final Ledger healthy |
+| `06-money-request-payment-storm.js` | Different-key concurrent pays settle once | One Transfer and 49 terminal conflicts |
 
 Each script uses k6 thresholds and exits non-zero when its claimed invariant fails. Read [tests/k6/README.md](tests/k6/README.md) before presenting results; it documents prerequisites, expected Step-Up handling, and what these tests do **not** prove.
 
@@ -603,7 +630,9 @@ FastAPI settings are environment-driven. Development defaults are safe only for 
 | `STEPUP_AMOUNT_POISHA` | `2500000` | ৳25,000 Step-Up threshold |
 | `STEPUP_VELOCITY_COUNT` | `5` | Transfer count that triggers velocity Step-Up |
 | `STEPUP_VELOCITY_MINUTES` | `10` | Velocity lookback window |
-| `MONEY_REQUEST_TTL_HOURS` | `24` | Reserved for the planned Money Request flow |
+| `EXPECTED_REPLICAS` | `3` | Healthy replica target reported by `/system-info` |
+| `HEARTBEAT_FRESHNESS_SECONDS` | `15` | Maximum age counted as healthy |
+| `CHAOS_ENABLED` | `false` | Enables the rollback laboratory outside production only |
 
 Production Compose additionally requires `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `PUBLIC_HOSTNAME`, and `ACME_EMAIL`. Never reuse or commit development secrets.
 
@@ -650,6 +679,7 @@ Follow the complete provisioning, secret setup, Vercel, verification, redeployme
 - PINs are bcrypt-hashed; plaintext PINs are neither persisted nor logged.
 - Invalid phone and invalid PIN login attempts have the same response and both perform bcrypt work.
 - Failed login limits are persisted in PostgreSQL and keyed by phone plus forwarded client address.
+- PostgreSQL-backed rate limits apply across replicas; forwarded addresses are parsed and trusted only from configured proxy networks.
 - JWTs are signed, expire after 12 hours by default, and determine the acting User.
 - The sender Account is resolved server-side and cannot be supplied in a Transfer body.
 - Recipient lookup exposes no User ID, Account ID, balance, or full stored phone number.
@@ -657,15 +687,16 @@ Follow the complete provisioning, secret setup, Vercel, verification, redeployme
 - Journal mutability and negative User balances are rejected at the database layer.
 - CORS names the accepted and exposed financial headers explicitly.
 - Unhandled errors return a trace ID and no stack trace.
+- Request bodies are capped at 32 KiB and structured logs exclude bodies, JWTs, PINs, and hashes.
 - Authoritative storage failure fails closed.
 
 ### Prototype boundaries
 
-This is not a production security certification. Before real-world use it would need, at minimum, managed secrets, key rotation, stronger identity/device controls, rate limiting beyond login lockout, security headers, abuse monitoring, encrypted backups, database high availability, disaster recovery, dependency scanning, external penetration testing, and regulatory review.
+This is not a production security certification. Before real-world use it would need, at minimum, managed secrets, key rotation, stronger identity/device controls, adaptive abuse monitoring, security headers, encrypted backups, database high availability, disaster recovery, dependency scanning, external penetration testing, and regulatory review.
 
 ## Observability and integrity
 
-Every response carries a trace and instance identity. The gateway adds its selected upstream, and Transfer responses state whether they are an idempotent replay.
+Every response carries a trace and instance identity. The gateway adds its selected upstream, write responses state whether they are an idempotent replay, and every request emits one redacted JSON log. Replica heartbeats update every five seconds and are healthy for a 15-second freshness window.
 
 `GET /api/v1/integrity` computes these five assertions directly from PostgreSQL on every request:
 
@@ -751,8 +782,9 @@ Blank record for any additional diagram:
 │   │   ├── schema.sql          # authoritative, re-runnable schema
 │   │   ├── idempotency.py      # exactly-once request guard
 │   │   └── policy.py           # limits and deterministic Step-Up
-│   └── tests/                  # real-PostgreSQL regressions
-├── tests/k6/                   # concurrency and failure scenarios
+│   └── tests/                  # real-PostgreSQL regressions and OpenAPI drift
+├── tests/blackbox/             # public three-replica acceptance gate
+├── tests/k6/                   # six concurrency and failure scenarios
 ├── infra/
 │   ├── nginx/                  # replica gateway
 │   ├── caddy/                  # production TLS edge
@@ -760,6 +792,11 @@ Blank record for any additional diagram:
 ├── docs/
 │   ├── adr/                    # architectural decision records
 │   ├── api-contract.md         # complete HTTP contract
+│   ├── openapi.json            # deterministic frontend snapshot
+│   ├── codebase-tour.md        # plain-language implementation map
+│   ├── backend-architecture.md # locking, transactions, failure semantics
+│   ├── frontend-integration.md # frontend workflow and retry rules
+│   ├── testing-and-reliability.md # commands, evidence, troubleshooting
 │   └── frontend-screens.md     # PWA screen/component specification
 ├── web/                        # reserved for the planned Next.js PWA
 ├── CONTEXT.md                  # canonical domain language
@@ -773,6 +810,10 @@ Blank record for any additional diagram:
 |---|---|
 | [CONTEXT.md](CONTEXT.md) | Canonical product vocabulary and definitions |
 | [docs/api-contract.md](docs/api-contract.md) | Endpoint payloads, errors, headers, and retry semantics |
+| [docs/codebase-tour.md](docs/codebase-tour.md) | Plain-language product and repository walkthrough |
+| [docs/backend-architecture.md](docs/backend-architecture.md) | Technical module, transaction, locking, and operations design |
+| [docs/frontend-integration.md](docs/frontend-integration.md) | Screen mapping, token/poisha handling, and safe retries |
+| [docs/testing-and-reliability.md](docs/testing-and-reliability.md) | Test layers, verified evidence, and troubleshooting |
 | [docs/frontend-screens.md](docs/frontend-screens.md) | Mobile-first screens, components, states, and accessibility rules |
 | [docs/adr](docs/adr) | Architectural choices, alternatives, and consequences |
 | [tests/k6/README.md](tests/k6/README.md) | Reliability scenario execution and interpretation |
@@ -785,7 +826,7 @@ Blank record for any additional diagram:
 ### Near-term product work
 
 1. Build the mobile-first Next.js PWA and judge-facing Integrity dashboard.
-2. Add Money Request persistence and create/pay/decline/cancel endpoints.
+2. Integrate the frontend branch against `docs/openapi.json` and hide deferred controls.
 3. Implement consent-based Reversal requests as new compensating Transfers.
 4. Add in-app notifications written atomically with relevant state changes.
 5. Add scheduled intentions whose worker eventually calls the same Transfer engine.

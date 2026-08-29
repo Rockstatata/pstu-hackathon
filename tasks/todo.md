@@ -1,5 +1,20 @@
 # Build Plan — Money Movement Application
 
+## Backend–Frontend merge readiness (current)
+
+- [x] Freeze and verify the existing backend foundation on `main`.
+- [x] Add the complete Money Request lifecycle and concurrent-payment proof.
+- [x] Add database-backed rate limits, body/query bounds, safe failure semantics,
+      structured logs, and replica heartbeats.
+- [x] Export deterministic OpenAPI and make drift a test failure.
+- [x] Run unit, black-box, three-replica, k6, and final Ledger-integrity gates.
+- [x] Publish the codebase tour, architecture, frontend integration, and reliability guides.
+- [ ] Merge the frontend branch only after the backend contract is green.
+
+Release boundary: notifications, consent Reversals, and scheduled Transfers remain
+deferred. Their frontend controls must stay hidden. Transaction detail must explain
+that Reversals are unavailable in this release.
+
 **Deadline 15:00.** Plan written 10:35. Design locked via `/grill-with-docs`; see `CONTEXT.md` and `docs/adr/`.
 
 Ordering rule: everything above the **CUT LINE** is the defensible product. Everything below is
@@ -22,7 +37,7 @@ Responsiveness is a marked criterion, so it is never a later pass. See `docs/fro
 
 ## Phase 0 — Scaffolding (45m, by 11:20)
 
-- [ ] `docker-compose.yml`: postgres, api (3 replicas), gateway (nginx), web, k6
+- [x] `docker-compose.yml`: postgres, api (3 replicas), gateway (nginx), web, k6
 - [x] `backend/` FastAPI app skeleton, settings, health endpoint — **activate existing `backend/venv`, never recreate**
 - [x] PostgreSQL schema: `users`, `accounts`, `journal_entries`, `transfers`, `idempotency_records`
 - [x] Re-runnable `schema.sql` under an advisory lock (chosen instead of Alembic for the hackathon)
@@ -82,7 +97,7 @@ Redeploy from here on is `git pull && docker compose up -d --build` (~2m) plus V
   - [x] every transfer has ≥2 legs summing to zero
   - [x] issuance account = −(sum of user balances)
 - [x] Counters: completed transfers, idempotent replays, rejected overspends, step-ups
-- [ ] Replica health across the 3 API instances
+- [x] Replica health across the 3 API instances
 - [ ] Screen I1
 
 ## Phase 6 — Concurrency proof (30m, by 14:50)
@@ -97,8 +112,8 @@ Redeploy from here on is `git pull && docker compose up -d --build` (~2m) plus V
 
 ## Phase 7 — Money Requests (40m)
 
-- [ ] `money_requests` table; status **derived**, expiry evaluated lazily at read *and* inside the payment transaction
-- [ ] Create / pay / decline / cancel; paying routes through the normal transfer engine
+- [x] `money_requests` table; status **derived**, expiry evaluated lazily at read *and* inside the payment transaction
+- [x] Create / pay / decline / cancel; paying routes through the normal transfer engine
 - [ ] Screens F1, F2, F3
 
 ## Phase 8 — Group Transfers (40m)
@@ -142,12 +157,13 @@ Redeploy from here on is `git pull && docker compose up -d --build` (~2m) plus V
 
 ## Review
 
-Built the backend financial core through Phase 6 plus the Phase 8 Group Transfer engine and
-Phase 10 risk rules. The local stack has three stateless API replicas behind nginx, a double-entry
-Ledger, concurrency-safe idempotency, history, integrity reporting, login lockout, and five passing
-k6 reliability scenarios.
+Built the backend financial core through the P0/P1 merge boundary, including Money Requests,
+Group Transfers, risk rules, shared rate limits, structured logs, failure semantics, and replica
+heartbeats. The clean test stack has three stateless API replicas behind nginx, a double-entry
+Ledger, concurrency-safe idempotency, 16 passing backend tests, a passing black-box gate, and six
+passing k6 reliability scenarios.
 
 The implementation uses re-runnable raw SQL instead of Alembic/ORM models and phone + PIN instead
-of email + password. The frontend, Money Requests, Reversals, notifications, and scheduled
-Transfers remain cut. Azure infrastructure is provisioned, but application deployment and TLS
-verification are still pending.
+of email + password. The frontend branch is not available locally yet. Consent-based Reversals,
+notifications, and scheduled Transfers remain deferred and their controls must be hidden. Azure
+infrastructure is provisioned, but application deployment and TLS verification remain pending.

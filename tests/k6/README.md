@@ -1,13 +1,11 @@
 # The failure laboratory
 
-Five scenarios. Each one targets a specific way a money system loses money, and each maps to a
+Six scenarios. Each one targets a specific way a money system loses money, and each maps to a
 counter on the integrity dashboard.
 
-> **Status: bound to `docs/api-contract.md`, imports verified, not yet run against a live API.**
-> Every path, field name, status code and error code lives in [lib/config.js](lib/config.js) — if a
-> backend change breaks a scenario, the fix almost certainly belongs in that one file. All five
-> scripts have been parsed and their imports resolved against stubbed k6 modules, so they will load;
-> nothing has executed against a running stack yet.
+> **Status: verified on 29 August 2026 against an empty PostgreSQL database and three API replicas.**
+> Every path, field name, status code and error code lives in [lib/config.js](lib/config.js). See
+> [the reliability guide](../../docs/testing-and-reliability.md) for measured results.
 
 ## Step-Up is on the happy path here
 
@@ -27,6 +25,7 @@ re-asking rather than minting a fresh key, which would be a second movement.
 | 3 | [Deadlock pressure](03-deadlock-pressure.js) | Bidirectional A↔B traffic never deadlocks (ADR-0003) | — |
 | 4 | [Sustained load](04-sustained-load.js) | Throughput across all 3 replicas, ledger balanced after | Completed transfers |
 | 5 | [Replica kill](05-replica-kill.js) | SIGKILL a replica mid-flight → no money lost | — |
+| 6 | [Money Request payment storm](06-money-request-payment-storm.js) | 50 different-key pays → exactly one Transfer | — |
 
 ## Running
 

@@ -14,7 +14,8 @@ Never send or expect a decimal taka value.
 system endpoints. Never a cookie — ADR-0007, the frontend is a different origin.
 
 **Field names.** Responses are always camelCase. Requests accept **both** camelCase and
-snake_case (`amountPoisha` or `amount_poisha`, `recipientPhone` or `recipient_phone`).
+snake_case aliases where the schema declares them. Unknown fields and mixed one-to-one/group
+Transfer forms are rejected. Request bodies are limited to 32 KiB.
 
 **The sender is never in the request body.** It is resolved from the token. A body that
 names its own sender would let a client spend someone else's money.
@@ -51,7 +52,13 @@ it), and `X-Served-By` (added by the gateway). All three are CORS-exposed.
 | `PHONE_ALREADY_REGISTERED` | 409 | Registration collision |
 | `UNAUTHENTICATED` | 401 | Missing, invalid, or expired token |
 | `TRANSFER_NOT_FOUND` | 404 | No transfer with that reference **that you have a leg in** |
-| `INTERNAL_ERROR` | 500 | Genuine server fault. **This is the only code that means we broke** |
+| `MONEY_REQUEST_NOT_FOUND` | 404 | Unknown request, or one the caller is not allowed to see |
+| `MONEY_REQUEST_NOT_PENDING` | 409 | A conflicting action targeted a terminal request |
+| `MONEY_REQUEST_EXPIRED` | 409 | The pending request passed its fixed 24-hour expiry |
+| `RATE_LIMITED` | 429 | Cross-replica limit reached; obey `Retry-After` |
+| `PAYLOAD_TOO_LARGE` | 413 | Request body exceeds 32 KiB |
+| `FINANCIAL_CORE_UNAVAILABLE` | 503 | PostgreSQL or the financial API tier is unavailable; outcome may be uncertain |
+| `INTERNAL_ERROR` | 500 | Unexpected server fault; inspect history before retrying a write |
 
 > For load tests: everything except `INTERNAL_ERROR` and non-JSON responses is the system
 > working correctly. `INSUFFICIENT_FUNDS` under a double-spend storm is the pass condition.
@@ -142,7 +149,8 @@ Group (ADR-0002, all-or-nothing):
 A Group Transfer accepts at most 20 submitted recipients. Every submitted amount
 must be positive; duplicate phone numbers are merged only after that validation.
 
-Add `"pin": "48213"` only after a 403 `STEP_UP_REQUIRED`.
+The frontend may send `"pin": "48213"` on the first attempt. If it waits for a 403
+`STEP_UP_REQUIRED`, it must retry with the same Idempotency-Key.
 
 ```json
 {
@@ -190,8 +198,53 @@ not the sender's total.
 
 ### `GET /transfers/{reference}` → 200
 
-Same object plus `reversible` (boolean) and, when false, `notReversibleReason` — a sentence
-ready to show on the disabled button (ADR-0005).
+Same object plus `reversible: false` and `notReversibleReason`. Consent-based Reversals are
+deferred for this release, so the frontend must hide the action rather than offer a dead control.
+
+---
+
+## Money Requests
+
+A Money Request is a 24-hour consent workflow, not money in motion. `EXPIRED` is derived when
+a pending row passes `expiresAt` and is checked again under lock before every state change.
+Unknown and unauthorized IDs both return 404.
+
+### `POST /money-requests` → 201
+
+Requires `Idempotency-Key`.
+
+```json
+{ "payerPhone": "01812345678", "amountPoisha": 125000, "reason": "Dinner split" }
+```
+
+```json
+{
+  "requestId": "uuid", "reference": "REQK7M2QP9XRT4", "direction": "outgoing",
+  "status": "PENDING", "amountPoisha": 125000, "reason": "Dinner split",
+  "requester": { "name": "Ayesha", "maskedPhone": "017*****678" },
+  "payer": { "name": "Farhan", "maskedPhone": "018*****678" },
+  "transferReference": null,
+  "createdAt": "2026-08-29T11:04:22Z", "expiresAt": "2026-08-30T11:04:22Z",
+  "resolvedAt": null
+}
+```
+
+### `GET /money-requests?direction=incoming|outgoing&status=...&limit=50` → 200
+
+`status` is one of `PENDING`, `PAID`, `DECLINED`, `CANCELLED`, or `EXPIRED`; `limit` is 1–100.
+Returns `{ "moneyRequests": [...] }`. `GET /money-requests/{id}` returns one resource.
+
+### `POST /money-requests/{id}/pay` → 201
+
+Requires `Idempotency-Key`; body is `{ "pin": "54321" }` when Step-Up applies. Payment locks
+the request and invokes the normal Transfer engine in the same transaction. The Transfer receipt
+adds `moneyRequestId` and `moneyRequestReference`. Same-key replay returns the stored receipt with
+`X-Idempotent-Replay: true`; different-key double payment returns 409.
+
+### `POST /money-requests/{id}/decline` · `POST /money-requests/{id}/cancel` → 200
+
+Only the payer may decline and only the requester may cancel. Repeating the same terminal action
+returns the same resource; a conflicting terminal transition returns 409.
 
 ---
 
@@ -222,8 +275,18 @@ per-check special case. `verdict` is `HEALTHY` only when all five pass.
 
 ### `GET /system-info` → 200
 
-The live policy thresholds and the replicas seen starting. Use it to render the policy
-limits in the UI rather than hardcoding them.
+Returns the live policy plus `expectedReplicas`, `healthyReplicas`, a 15-second freshness window,
+overall `health`, and every instance's `lastSeen`/`healthy` state. Use policy values in the UI
+rather than hardcoding them.
+
+## Operational limits
+
+- Login: 20 attempts per sanitized client IP per minute.
+- Recipient lookup: 60 requests per authenticated User per minute.
+- Money Request creation: 20 requests per authenticated User per minute.
+- A 429 includes `Retry-After` and `retryAfterSeconds`.
+- If a write loses contact with the financial core, do not mint a new key. Inspect history and
+  retry the same intention only with its original Idempotency-Key.
 
 ---
 

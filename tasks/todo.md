@@ -155,7 +155,75 @@ Redeploy from here on is `git pull && docker compose up -d --build` (~2m) plus V
 
 ---
 
+## Frontend implementation — `web/`
+
+Runs against `docs/design-system.md` (tokens, colour law) and `docs/frontend-screens.md` (screens,
+states, responsive). Built to the API contract in `docs/solution-prd` §26–27 so it drops onto the
+real backend without a rewrite. **No authoritative money logic in the client** — the UI formats,
+validates for UX, and submits intentions; every balance and status shown comes from a response body.
+
+> **Status at handoff — see `web/HANDOFF.md`.** FE-0 is done and FE-1/2/4 are partly done.
+> `npm run build` has never been run, so none of it is compile-verified. Two known breaks are
+> listed in the handoff. No screens exist yet — FE-5 onward is untouched.
+
+### FE-0 — Scaffold and tokens
+
+- [x] `create-next-app` into `web/`: TypeScript, App Router, `src/`, Tailwind, ESLint
+- [x] `globals.css`: both token blocks from `docs/design-system.md`, `:root` + `.dark`
+- [x] Inter via `next/font/google`; `tabular-nums` utility for money
+- [x] No-flash theme script in `layout.tsx`, `localStorage.theme` then `prefers-color-scheme`
+- [x] `lucide-react`
+
+### FE-1 — Primitives
+
+- [ ] `Button` (primary / secondary / ghost / danger), 44px min, focus ring
+- [ ] `Input`, `Label`, field error wired via `aria-describedby`
+- [ ] `Card`, `Modal` / `BottomSheet` (sheet below `md`, centred modal at `md`+)
+- [ ] `Tabs`, `Avatar`, `StatusBadge` (8 states × 2 themes), `EmptyState`, `Skeleton`, `Toast`
+
+### FE-2 — Money and identity
+
+- [ ] `formatTaka` — poisha integer in, `৳2,500.00` out. The only formatter in the codebase.
+- [ ] `AmountDisplay` — direction law: in `+`/green, out `−`/neutral, reversal, failed
+- [ ] `AmountInput` — poisha-backed, `inputMode="numeric"`, balance and policy messages
+- [ ] `PhoneInput`, `MaskedPhone`, `PinInput`, `RecipientCard`, `RecipientChip`
+- [ ] `BalanceCard` — the one gradient surface, Eye/EyeOff, offline state
+
+### FE-3 — Shell
+
+- [ ] Bottom tab bar below `lg` (Home · History · Requests · More), sidebar at `lg`+
+- [ ] Header with `NotificationBell`, theme toggle
+- [ ] `OfflineBanner` — `navigator.onLine`, disables send actions (ADR-0004)
+
+### FE-4 — API client
+
+- [ ] Typed client for `/auth`, `/accounts/me`, `/users/search`, `/transfers`, `/internal/integrity`
+- [ ] `Idempotency-Key` generated once per compose session, resent unchanged on retry
+- [ ] JWT in `Authorization: Bearer` — not a cookie (ADR-0007)
+- [ ] Error contract `{error:{code,message,traceId}}` → plain sentences, never a raw code
+
+### FE-5 — P0 screens
+
+- [ ] A1 Register, A2 Login, A3 Funded welcome
+- [ ] B1 Dashboard
+- [ ] C1 Compose → C2 Recipient Verification → C4 Receipt
+- [ ] E1 History, E2 Transaction Detail
+
+### FE-6 — I1 Integrity Dashboard
+
+- [ ] Always dark, projector-sized: 56px tabular metrics, `VerdictBanner`, `ReplicaStatus`
+- [ ] Live values only, no caching, no fabricated numbers
+
+### FE-7 — Quality gate
+
+- [ ] 390 / 768 / 1440 verified; 44px targets; visible focus; one `h1` per screen
+- [ ] Loading, empty, error, offline for every screen that fetches
+- [ ] No hard-coded hex outside `globals.css`; no emoji; no inline `toFixed`
+
+---
+
 ## Review
+
 
 Built the backend financial core through the P0/P1 merge boundary, including Money Requests,
 Group Transfers, risk rules, shared rate limits, structured logs, failure semantics, and replica
@@ -167,3 +235,43 @@ The implementation uses re-runnable raw SQL instead of Alembic/ORM models and ph
 of email + password. The frontend branch is not available locally yet. Consent-based Reversals,
 notifications, and scheduled Transfers remain deferred and their controls must be hidden. Azure
 infrastructure is provisioned, but application deployment and TLS verification remain pending.
+
+_To be filled in when the build is complete: what was built, what was cut, what changed from this plan._
+
+---
+
+## Frontend extension — P1 and P2 flows
+
+- [x] Verify the current frontend baseline and repair any pre-existing type error that blocks it.
+- [x] Complete P1 money-request actions/detail and notification listing, using `api` only.
+- [x] Complete P2 scheduled-transfer list/creation and minimal profile/settings routes, using typed service methods only.
+- [x] Expose only complete routes through navigation and quick actions; retain offline safeguards and recipient verification.
+- [x] Run lint and production build; record the result below.
+
+### Review — frontend extension
+
+Implemented P1 request detail/actions and notifications, plus P2 scheduled transfers and settings.
+All components call the typed `api` service surface; no components contain endpoint paths or client-side
+financial authority. Request payment retains recipient verification and uses the normal receipt route.
+
+Verification: `cmd /c "npm run lint && npm run build"` in `web/` passes with no lint warnings.
+
+---
+
+## Frontend separation — User and Admin/Judge experiences
+
+- [x] Remove the integrity route from the consumer shell and focus navigation on money movement and the smart-card account view.
+- [x] Build a separate `/admin` operations shell and dashboard, using a frontend-only typed demo data boundary.
+- [x] Make transaction, idempotency, concurrency, ledger, health, audit, and exception states legible in a judge demonstration.
+- [x] Verify responsive frontend compilation with lint and a production build.
+
+### Review — frontend separation
+
+Consumer navigation is limited to Home, History, Requests, and the Smart Account Card. The previous
+consumer integrity route was removed. `/admin` uses a distinct always-dark operations shell and
+labels its data as a frontend-only demonstration. `lib/admin-demo.ts` is the only data seam the
+Admin/Judge dashboard consumes, so it can later be replaced without a UI rewrite.
+
+Verification: `cmd /c "npm run lint && npm run build"` in `web/` passes; the production build emits
+18 routes, including `/admin` and `/wallet`, with no `/integrity` route.
+

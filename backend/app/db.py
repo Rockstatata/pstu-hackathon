@@ -7,8 +7,12 @@ from .config import settings
 
 engine = create_engine(
     settings.database_url,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
+    # Fail fast when the pool is genuinely saturated. Waiting the 30s default
+    # would outlive the gateway's read timeout, so the caller would be told the
+    # outcome is unknown for a request that had not yet started.
+    pool_timeout=settings.db_pool_timeout_seconds,
     pool_pre_ping=True,
     future=True,
 )

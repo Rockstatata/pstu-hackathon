@@ -21,6 +21,7 @@ import {
   integrityHealthy,
   describeIntegrity,
 } from './lib/api.js';
+import { summaryFor } from './lib/summary.js';
 import { STATUS, TAKA, SIGNUP_GRANT, HEADERS, FIELDS } from './lib/config.js';
 
 const AMOUNT = 2500 * TAKA;
@@ -115,3 +116,6 @@ export function teardown(data) {
       `     verdict:   ${ok ? 'money moved exactly once' : 'FAILED'}\n`,
   );
 }
+
+// Written to /results so tests/bench can assemble one report from all six runs.
+export const handleSummary = summaryFor('01-duplicate-storm', '50 identical requests under one Idempotency-Key move money exactly once');

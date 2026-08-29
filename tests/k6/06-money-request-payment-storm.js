@@ -17,6 +17,7 @@ import {
   integrityHealthy,
   describeIntegrity,
 } from './lib/api.js';
+import { summaryFor } from './lib/summary.js';
 import { CODES, SIGNUP_GRANT } from './lib/config.js';
 
 const STORM_SIZE = 50;
@@ -104,3 +105,6 @@ export function teardown(data) {
       `     verdict:   ${ok ? 'exactly one Transfer created' : 'FAILED'}\n`,
   );
 }
+
+// Written to /results so tests/bench can assemble one report from all six runs.
+export const handleSummary = summaryFor('06-money-request-payment-storm', '50 different-key payment attempts create exactly one Transfer');

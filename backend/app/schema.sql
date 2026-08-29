@@ -131,6 +131,12 @@ CREATE TABLE IF NOT EXISTS transfers (
 CREATE INDEX IF NOT EXISTS transfers_sender_idx ON transfers (sender_account_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS transfers_reversal_idx ON transfers (reversal_of) WHERE reversal_of IS NOT NULL;
 
+-- The operations console reads throughput as transfers per minute over the last
+-- hour, which filters on created_at alone. transfers_sender_idx is prefixed by
+-- sender_account_id and cannot serve that, so the console would seq-scan the
+-- whole table every five seconds while the load test it is measuring runs.
+CREATE INDEX IF NOT EXISTS transfers_created_at_idx ON transfers (created_at DESC);
+
 -- A Scheduled Transfer is a future instruction, never a Transfer or Journal
 -- Entry before execution (ADR-0010). A due row is claimed with FOR UPDATE SKIP
 -- LOCKED and the resulting Transfer link is committed in the same transaction.

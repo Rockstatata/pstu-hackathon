@@ -17,6 +17,7 @@ import {
   integrityHealthy,
   describeIntegrity,
 } from './lib/api.js';
+import { summaryFor } from './lib/summary.js';
 import { STATUS, TAKA, BASE_URL, PATHS, HEADERS } from './lib/config.js';
 
 const MAX_VUS = 40;
@@ -101,3 +102,6 @@ export function teardown() {
       `     verdict:       ${ok ? 'balanced, load distributed' : 'FAILED'}\n`,
   );
 }
+
+// Written to /results so tests/bench can assemble one report from all six runs.
+export const handleSummary = summaryFor('04-sustained-load', 'Ordinary load is carried across every replica with the Ledger balanced after');

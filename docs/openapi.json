@@ -2909,6 +2909,26 @@
         ]
       }
     },
+    "/api/v1/system-metrics": {
+      "get": {
+        "description": "Load, concurrency and database behaviour, read live like /integrity.\n\nUnauthenticated for the same reason: it is the screen a sceptic is invited to\nwatch while someone else moves money, and it names no person, no phone number\nand no individual balance. Everything here is a PostgreSQL read at the moment\nof the call, except the latency block, which is this replica's own recent\nrequests and is labelled with its instance id.",
+        "operationId": "system_metrics_report_api_v1_system_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "System Metrics Report",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/api/v1/transfers": {
       "get": {
         "description": "This Account's movements, read from the Ledger rather than from transfers.\n\nReading the journal is what makes a Group Transfer show up correctly for each\nrecipient: they see their own leg, not the sender's total.",

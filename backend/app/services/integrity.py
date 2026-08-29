@@ -8,6 +8,8 @@ Each assertion answers a question a sceptical reader would actually ask, and eac
 is phrased so that PASS means "money is conserved", not "the code ran".
 """
 
+import time
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -78,6 +80,7 @@ COUNTERS = {
 
 
 def run(session: Session) -> dict:
+    started = time.perf_counter()
     assertions = []
     healthy = True
 
@@ -114,4 +117,10 @@ def run(session: Session) -> dict:
             "heldPoisha": int(totals.held),
             "differencePoisha": int(totals.issued) - int(totals.held),
         },
+        # What the proof cost to compute. These are aggregates over the whole
+        # Ledger with no cache behind them, so the figure grows with the Ledger
+        # -- which is a real property of this design and is better shown than
+        # discovered. Publishing it also makes the alternative explicit: a cached
+        # verdict would be fast and would prove nothing.
+        "computedInMs": round((time.perf_counter() - started) * 1000, 2),
     }

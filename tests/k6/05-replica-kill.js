@@ -10,14 +10,27 @@
 // Run this LAST in the demo. Killing a container live while the counter keeps
 // climbing, then showing integrity green, is the strongest 90 seconds available.
 //
+// Prefer `pwsh tests/bench/run-proof.ps1`, which kills the replica on a timer.
+// A human typing into a second terminal cannot be relied on to hit the window
+// where money is actually in flight, which is the whole claim of this scenario.
+//
+// By hand, if you must:
+//
 //   Terminal 1:  k6 run -e BASE_URL=... tests/k6/05-replica-kill.js
 //   Terminal 2:  (after ~15s, kill ONE replica — not the service)
 //     docker kill pstu-money-api-2
 //   Afterwards:
 //     docker compose up -d --no-recreate api
+//     docker compose exec gateway nginx -s reload
 //
 // `docker compose kill api` targets the SERVICE and stops all three. Always
 // name the container.
+//
+// The nginx reload is not optional. nginx resolves the upstream addresses once,
+// when it starts, and a restarted container can come back on a different
+// address — so without the reload the gateway keeps trying to reach a replica
+// that no longer exists and the pool is quietly down one member for every
+// scenario that follows.
 
 import { check } from 'k6';
 import { Counter } from 'k6/metrics';
@@ -29,6 +42,7 @@ import {
   integrityHealthy,
   describeIntegrity,
 } from './lib/api.js';
+import { summaryFor } from './lib/summary.js';
 import { STATUS, TAKA, SIGNUP_GRANT } from './lib/config.js';
 
 const POOL_SIZE = 8;
@@ -114,3 +128,6 @@ export function teardown(data) {
       `     verdict:    ${ok ? 'no money lost' : 'FAILED'}\n`,
   );
 }
+
+// Written to /results so tests/bench can assemble one report from all six runs.
+export const handleSummary = summaryFor('05-replica-kill', 'Killing a replica mid-flight loses no money');

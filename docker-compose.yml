@@ -85,6 +85,9 @@ services:
     profiles: ["chaos"]
     volumes:
       - ./tests/k6:/scripts
+      # Each scenario writes one JSON summary here; tests/bench assembles them
+      # into the report. Writable, unlike /scripts, because k6 is the producer.
+      - ./tests/bench/results:/results
     environment:
       BASE_URL: http://gateway/api/v1
 

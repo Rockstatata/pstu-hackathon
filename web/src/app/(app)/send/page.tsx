@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, ChevronRight } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronRight, CircleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -11,7 +11,7 @@ import { StepUpDialog } from "@/components/send/StepUpDialog";
 import { Button } from "@/components/ui/Button";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { PhoneInput } from "@/components/ui/PhoneInput";
-import { ApiError, api, newIdempotencyKey } from "@/lib/api";
+import { ApiError, api, isUncertainOutcome, newIdempotencyKey } from "@/lib/api";
 import { formatTaka, initialsOf, parseTakaToPoisha } from "@/lib/money";
 import { useOnlineStatus } from "@/lib/use-online-status";
 import type { AccountSummary, RecipientPreview } from "@/lib/types";
@@ -32,6 +32,8 @@ export default function SendPage() {
   const [submitting, setSubmitting] = useState(false);
   const [idempotencyKey] = useState(newIdempotencyKey);
   const [stepUpReason, setStepUpReason] = useState<string | null>(null);
+  /** Set when the server never told us the outcome. Never a failure claim. */
+  const [uncertain, setUncertain] = useState<string | null>(null);
   const [recents, setRecents] = useState<RecipientPreview[]>([]);
   const offline = !useOnlineStatus();
   const recipient = lookup?.phone === phone ? lookup.recipient : null;
@@ -87,6 +89,7 @@ export default function SendPage() {
     if (!recipient || amountMinor === null) return;
     setSubmitting(true);
     setFormError(null);
+    setUncertain(null);
     try {
       const receipt = await api.createTransfer(
         { recipientPhone: recipient.phone, amountMinor, note: note.trim() || undefined, pin },
@@ -103,14 +106,19 @@ export default function SendPage() {
       // Let the dialog report a wrong PIN in place, so the person can retype it.
       if (cause instanceof ApiError && cause.code === "STEP_UP_FAILED") throw cause;
 
-      const sentence = cause instanceof ApiError ? cause.sentence : t("Something went wrong. No money has moved.");
-      // A network outcome can be ambiguous. Keep the idempotency key and the confirmation
-      // sheet so the person can check history rather than seeing a false failure receipt.
-      if (cause instanceof ApiError && cause.code === "NETWORK") {
-        setFormError(sentence);
-      } else {
-        router.replace(`/send/receipt/failed?reason=${encodeURIComponent(sentence)}`);
+      // An unknown outcome is not a failure, and saying "no transaction ID was
+      // issued" when a replica died mid-commit would be a confident lie about
+      // someone's money. Those cases keep the compose screen and the same
+      // Idempotency-Key, so the safe recovery — check history, resubmit the
+      // identical request — is still available. Only a decision the server
+      // actually made and committed to gets a failure receipt.
+      if (cause instanceof ApiError && isUncertainOutcome(cause.code)) {
+        setUncertain(cause.sentence);
+        return;
       }
+
+      const sentence = cause instanceof ApiError ? cause.sentence : t("Something went wrong. No money has moved.");
+      router.replace(`/send/receipt/failed?reason=${encodeURIComponent(sentence)}`);
     } finally {
       setSubmitting(false);
     }
@@ -146,11 +154,28 @@ export default function SendPage() {
       </section>
 
       {formError && <p aria-live="polite" className="mt-5 rounded-md bg-danger-surface px-3 py-2.5 text-[13px] font-medium text-danger-text">{formError}</p>}
+      {uncertain && (
+        <section aria-live="assertive" className="mt-5 rounded-md bg-warning-surface p-4">
+          <p className="flex items-center gap-2 text-[14px] font-semibold text-warning-text">
+            <CircleAlert aria-hidden className="size-4 shrink-0" />
+            {t("We do not know whether this went through")}
+          </p>
+          <p className="mt-2 text-[13px] leading-5 text-text-secondary">{uncertain}</p>
+          <p className="mt-2 text-[13px] leading-5 text-text-secondary">
+            {t("Check your history first. If it is not there, confirm again — this app resends the same request rather than making a second one, so it cannot send twice.")}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href="/history" className="inline-flex min-h-11 items-center rounded-md bg-surface px-4 text-[13px] font-semibold text-primary-text">
+              {t("Check transaction history")}
+            </Link>
+          </div>
+        </section>
+      )}
       <div className="safe-bottom fixed inset-x-0 bottom-[calc(56px+env(safe-area-inset-bottom))] z-20 border-t border-divider bg-bg px-4 py-3 lg:bottom-0 lg:left-[15rem] sm:px-6">
         <div className="mx-auto max-w-md"><Button full onClick={continueToConfirmation} disabled={offline || !recipient || Boolean(amountError) || amountMinor === null || amountMinor <= 0}>{t("Review transfer")} <ChevronRight aria-hidden className="size-4" /></Button></div>
       </div>
 
-      {showConfirmation && recipient && amountMinor !== null && <ConfirmationSheet amountMinor={amountMinor} recipient={recipient} note={note.trim()} confirming={submitting} disabled={offline} error={offline ? t("Reconnect to securely send money.") : formError} onCancel={() => { if (!submitting) { setShowConfirmation(false); setFormError(null); } }} onConfirm={() => void confirmTransfer()} />}
+      {showConfirmation && recipient && amountMinor !== null && <ConfirmationSheet amountMinor={amountMinor} recipient={recipient} note={note.trim()} confirming={submitting} disabled={offline} error={offline ? t("Reconnect to securely send money.") : (formError ?? uncertain)} onCancel={() => { if (!submitting) { setShowConfirmation(false); setFormError(null); } }} onConfirm={() => void confirmTransfer()} />}
       {stepUpReason && <StepUpDialog reason={stepUpReason} onCancel={() => setStepUpReason(null)} onVerify={(pin) => confirmTransfer(pin)} />}
     </div>
   );

@@ -87,7 +87,7 @@ Premium and technically sophisticated through restraint. Purple identity, flat s
 spacing, one gradient in the entire app (the balance card). Reference mood is the supplied purple
 fintech concept — colour only, not its layout. Anti-references: crypto-dashboard neon, gamified
 wallet confetti, and enterprise-grey banking. Both themes ship from Phase 0; light is the default,
-and I1 is always dark because it is a projector surface.
+and I1 ships both, with its own toggle — it is read on a projector and on a laptop.
 
 ### Design Principles
 

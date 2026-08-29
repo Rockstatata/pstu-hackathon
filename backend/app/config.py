@@ -17,6 +17,24 @@ class Settings(BaseSettings):
     # the backstop that keeps a stuck transaction from holding a worker.
     lock_timeout_ms: int = 3000
 
+    # Connection pool, sized against the request thread pool rather than guessed.
+    # A rate-limited endpoint holds its request session AND opens a second one
+    # for the counter, so worst case is two connections per in-flight request.
+    # request_threadpool_size * 2 <= db_pool_size + db_max_overflow keeps pool
+    # exhaustion structurally impossible instead of merely unlikely.
+    # 3 replicas * 40 + the scheduler stays well inside PostgreSQL's 200.
+    db_pool_size: int = 20
+    db_max_overflow: int = 20
+    # Deliberately shorter than nginx's 15s proxy_read_timeout. SQLAlchemy's 30s
+    # default would have the gateway give up first, so the caller would see a
+    # 503 for a request the API was still holding in a queue -- an uncertain
+    # outcome manufactured by our own timeout ordering.
+    db_pool_timeout_seconds: int = 5
+    # Starlette runs sync endpoints on anyio's thread pool, whose default of 40
+    # is larger than the connection pool above. Bounded here so the limit is the
+    # pool we sized, not a framework default we did not choose.
+    request_threadpool_size: int = 20
+
     cors_origins: str = "http://localhost:3000"
     app_environment: str = "development"
     max_request_body_bytes: int = 32 * 1024

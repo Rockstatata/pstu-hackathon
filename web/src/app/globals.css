@@ -107,40 +107,20 @@
   --shadow-card: none;
 }
 
-/* The Admin/Judge experience is intentionally always dark. It reuses the
-   approved dark token values so operations data is projector-readable without
-   changing the user's chosen theme in the consumer application. */
+/* The Admin/Judge console follows the chosen theme, light and dark alike.
+   It was dark-only on the assumption that it lives on a projector, but it is
+   also read on a laptop in a bright room, and a console that cannot be read is
+   not evidence of anything. The class stays as the ops-specific hook and now
+   declares no colour of its own: every token resolves from :root or .dark, so
+   there is exactly one place where a palette value is measured and corrected.
+   color-scheme is the one thing it must still state, because form controls and
+   scrollbars take it from the element rather than from a custom property. */
 .admin-experience {
+  color-scheme: light;
+}
+
+.dark .admin-experience {
   color-scheme: dark;
-  --bg: #0d0a1a;
-  --bg-sidebar: #110d20;
-  --surface: #181329;
-  --surface-subtle: #110d20;
-  --surface-elevated: #211a35;
-  --primary: #7c3aed;
-  --primary-hover: #8b5cf6;
-  --primary-fg: #ffffff;
-  --primary-text: #c084fc;
-  --accent: #8b5cf6;
-  --purple-soft: #2e2150;
-  --purple-border: #3b2b5c;
-  --text: #f5f3ff;
-  --text-secondary: #a8a0ba;
-  --text-muted: #756d87;
-  --divider: #2a2142;
-  --border-control: #756d87;
-  --focus: #c084fc;
-  --success: #22c55e;
-  --success-text: #4ade80;
-  --success-surface: #14331f;
-  --warning: #f59e0b;
-  --warning-text: #fbbf24;
-  --warning-surface: #3a2a0c;
-  --danger: #ef4444;
-  --danger-text: #f87171;
-  --danger-surface: #3a1717;
-  --neutral-surface: #211a35;
-  --shadow-card: none;
 }
 
 @theme inline {

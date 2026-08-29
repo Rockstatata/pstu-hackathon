@@ -18,6 +18,7 @@ import type {
   NotificationList,
   RecipientPreview,
   SystemInfo,
+  SystemMetrics,
   SmartWallet,
   SettlementPlan,
   ScheduledTransfer,
@@ -85,7 +86,8 @@ const SENTENCES: Record<string, string> = {
   UNAUTHENTICATED: "Your session has expired. Sign in again.",
   FINANCIAL_CORE_UNAVAILABLE: "Transfers are briefly unavailable. No money has moved.",
   INTERNAL_ERROR: "Something went wrong on our side. No money has moved.",
-  NETWORK: "We could not reach the server. Nothing was sent.",
+  NETWORK:
+    "We could not reach the server, so we cannot tell you whether this went through. Check your history before trying again.",
   SMART_WALLET_DISCONNECTED: "Connect the Smart Wallet before recording a sensor event.",
   SMART_WALLET_UNAVAILABLE: "Your Smart Wallet could not be loaded.",
   CASH_INVENTORY_INSUFFICIENT:
@@ -101,6 +103,34 @@ const SENTENCES: Record<string, string> = {
   SETTLEMENT_PLAN_CHANGED: "The group changed. Review the updated settlement before paying.",
   NOTHING_TO_SETTLE: "You do not currently owe a settlement in this group.",
 };
+
+/**
+ * Codes whose outcome is genuinely UNKNOWN to the client.
+ *
+ * The distinction matters more here than anywhere else in the app. A refusal —
+ * not enough balance, over the limit, no such recipient — is a decision the
+ * server made and committed to, and telling someone "this did not happen" is
+ * true. A dropped connection, a 503 from the financial core, or a key another
+ * replica is still holding are all states where the money may well have moved
+ * and we simply have not been told. Reporting those as "Transfer failed. No
+ * transaction ID was issued." is a confident lie, and it is the exact failure
+ * this system is being judged on.
+ *
+ * The recovery for every code in this set is the same and is safe: keep the
+ * Idempotency-Key, check history, and resubmit the identical request if it is
+ * not there. That is why the caller keeps the compose screen alive rather than
+ * routing to a receipt.
+ */
+export const UNCERTAIN_OUTCOME_CODES: ReadonlySet<string> = new Set([
+  "NETWORK",
+  "FINANCIAL_CORE_UNAVAILABLE",
+  "REQUEST_IN_PROGRESS",
+  "INTERNAL_ERROR",
+]);
+
+export function isUncertainOutcome(code: string): boolean {
+  return UNCERTAIN_OUTCOME_CODES.has(code);
+}
 
 export class ApiError extends Error {
   readonly code: string;
@@ -805,6 +835,9 @@ export const api = {
   integrity: () => request<IntegrityReport>("/integrity"),
 
   systemInfo: () => request<SystemInfo>("/system-info"),
+
+  /** Unauthenticated for the same reason as /integrity, and names no person. */
+  systemMetrics: () => request<SystemMetrics>("/system-metrics"),
 };
 
 /** One key per compose session, reused unchanged across every retry of it. */

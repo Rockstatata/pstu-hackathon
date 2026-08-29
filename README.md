@@ -45,7 +45,7 @@ All authoritative amounts are integers in **poisha**. One taka is 100 poisha, so
 
 ## Project status
 
-**Current state as of 29 August 2026:** the backend financial core, responsive Next.js PWA, Smart Wallet cash-inventory interface, shared-expense settlement, local multi-replica stack, scheduler worker, and k6 reliability scenarios are implemented. Azure resources and Caddy configuration are prepared; the final remote deployment, Vercel environment, and real-phone verification remain operational follow-up work.
+**Current state as of 29 August 2026:** the backend financial core, responsive Next.js PWA, Smart Wallet cash-inventory interface, shared-expense settlement, deterministic Financial Outlook, the judge-facing operations console, the local multi-replica stack, the scheduler worker, and the k6 reliability scenarios are implemented. The proof harness assembles a measured report from a full scenario pass. Azure resources and Caddy configuration are prepared; the final remote deployment, Vercel environment, and real-phone verification remain operational follow-up work.
 
 | Area | Status | Notes |
 |---|---|---|
@@ -58,13 +58,17 @@ All authoritative amounts are integers in **poisha**. One taka is 100 poisha, so
 | Integrity report | Implemented | Five live, uncached financial assertions |
 | Three API replicas and nginx gateway | Implemented | Local Docker Compose topology |
 | k6 reliability laboratory | Verified | Six scenarios pass against a clean three-replica stack |
-| Next.js PWA and integrity dashboard UI | Implemented | 21 routes; typed API seam, responsive consumer shell, and live judge dashboard |
+| Next.js PWA and operations console UI | Implemented | 22 routes; typed API seam, responsive consumer shell, and a live judge-facing console in both themes |
 | Money Requests | Implemented | Create, list, inspect, pay, decline, cancel, expiry, and concurrent-payment safety |
 | Consent-based Reversals | Implemented | Approval creates a compensating Transfer; original Journal Entries remain immutable |
 | Notifications | Implemented | Same-transaction writes, private unread state, and 10-second frontend polling |
 | Scheduled Transfers | Implemented | PIN-authorized intentions claimed once and executed by the normal Transfer engine |
 | Smart Wallet | Implemented | Separate append-only physical-cash inventory with explicit reconciliation |
 | Smart Group Settlement | Implemented | Immutable expenses, explainable net positions, and per-payer consent |
+| Financial Outlook | Implemented | Read-only integer-poisha analytics over completed Journal Entries; no write path and no score |
+| Operations metrics endpoint | Implemented | `GET /system-metrics` reads database, throughput, and concurrency behaviour live |
+| Retention sweeps | Implemented | The scheduler purges expired idempotency records and rate-limit counters in bounded batches |
+| Proof harness | Implemented | One command runs the scenarios, snapshots PostgreSQL either side of each, and renders [docs/PROOF.md](docs/PROOF.md) |
 | Production HTTPS deployment | Prepared | Compose, Caddy, and Azure instructions exist; final verification is pending |
 
 Do not describe planned features as shipped. The implementation tracker in [tasks/todo.md](tasks/todo.md) is the detailed source for current scope.
@@ -138,7 +142,14 @@ Every successful commit preserves these rules:
 - Require Step-Up for large, first-time, or high-velocity Transfers.
 - Read signed sent/received history and a reference-addressed Transfer detail.
 - Query liveness, database readiness, live policy, observed replicas, and Ledger integrity.
+- Raise a consent-based Reversal request against a completed Transfer, which the original recipient may approve or decline.
+- Write in-app Notifications in the same transaction as the state change they describe, and read them by polling.
+- Authorize a Scheduled Transfer with a PIN and let the worker execute it later through the normal Transfer engine.
+- Record physical cash observations in a separate append-only Cash Inventory Journal and reconcile against a counted total.
+- Split shared expenses, compute an explainable net position per member, and settle only the signed-in payer's own obligations.
+- Read a deterministic Financial Outlook derived from completed Journal Entries, with every rule and formula disclosed.
 - Enforce shared login/lookup/request rate limits, request-size bounds, and replica heartbeats.
+- Read live database, throughput, concurrency, and per-replica latency metrics from the operations console.
 
 ### Explicit non-goals
 
@@ -211,6 +222,10 @@ In local development, nginx is published at `http://localhost:8080` and PostgreS
 | `idempotency.py` | Reserve a per-User key and store/replay the committed response | Guess an uncertain result |
 | `policy.py` | Apply amount, daily, and deterministic Step-Up rules | Use an opaque model |
 | `services/integrity.py` | Compute live reconciliation assertions and counters | Cache a verdict |
+| `services/system_metrics.py` | Read database, throughput, and concurrency behaviour from PostgreSQL on demand | Present an application-held counter as database truth |
+| `observability.py` | Hold this replica's bounded latency ring and label it with the instance id | Let a per-process number be read as system-wide |
+| `services/retention.py` | Purge expired idempotency records and rate-limit counters in bounded batches | Touch Journal Entries or audit events |
+| `workers/scheduler.py` | Claim one due Scheduled Transfer at a time and run the periodic retention sweep | Move money outside `services/transfer.py` |
 | PostgreSQL | Own locks, constraints, durable state, and append-only enforcement | Delegate authority to a client cache |
 | nginx | Distribute requests and expose the upstream address | Silently retry a POST |
 | Caddy | Terminate production TLS and manage certificates | Own financial routing rules |
@@ -404,7 +419,7 @@ A Group Transfer produces one sender debit and one credit per unique recipient. 
 | **PostgreSQL 16** | ACID commits, row locks, constraints, JSONB audit metadata, advisory locks | Current deployment has one writer and no automatic database failover |
 | **Double-entry Ledger + cached balance** | Fast balance reads plus an independent reconciliation source | Two representations must update atomically and be checked for drift |
 | **Pessimistic row locking** | Correct overspend prevention under concurrent writes | Conflicting Transfers wait and may hit the bounded lock timeout |
-| **Database-backed idempotency** | Correct across replicas, restarts, and concurrent duplicates | Records currently have no expiry/retention process |
+| **Database-backed idempotency** | Correct across replicas, restarts, and concurrent duplicates | Records are retained for 48 hours, so a duplicate arriving later than that is treated as a new intention |
 | **Three stateless API replicas** | Demonstrates horizontal application scaling and process-failure tolerance | Does not make the single database highly available |
 | **nginx** | Simple replica distribution and explicit no-retry policy for writes | Health is connection-based rather than orchestrator-driven service discovery |
 | **Caddy in production** | Automatic TLS for the Azure hostname | Adds a second proxy with a deliberately separate responsibility |
@@ -412,6 +427,9 @@ A Group Transfer produces one sender debit and one credit per unique recipient. 
 | **k6** | Executable concurrency and failure claims with non-zero thresholds | Scenarios prove correctness at prototype load, not nationwide capacity |
 | **Next.js PWA on Vercel** | Planned mobile-first experience, CDN, simple push deploy | Split origin requires TLS, CORS, and bearer-token handling |
 | **Deterministic risk rules** | Explainable and easy to test | Less adaptive than a mature fraud platform; intentionally no AI in the money path |
+| **Connection pool sized against the request thread pool** | Pool exhaustion is structurally impossible rather than merely unlikely | Caps concurrent in-flight requests per replica at a number chosen rather than inherited |
+| **Live operational metrics, no metrics store** | Every figure on the console is a PostgreSQL read at the moment of the call | No history beyond what the database itself retains; no Prometheus or Grafana |
+| **Per-replica latency in process memory** | Measuring the hot path costs the hot path nothing | The percentile is one replica's recent traffic, not a system figure, and is labelled as such |
 
 The architectural decisions and their consequences are recorded in [docs/adr](docs/adr):
 
@@ -422,6 +440,10 @@ The architectural decisions and their consequences are recorded in [docs/adr](do
 5. [Consent-based compensating Reversals](docs/adr/0005-reversal-is-consent-based-compensation.md)
 6. [No AI in the money path](docs/adr/0006-no-ai-in-the-money-path.md)
 7. [Split-origin deployment](docs/adr/0007-split-origin-deployment.md)
+8. [Physical cash uses a separate inventory journal](docs/adr/0008-separate-cash-inventory-journal.md)
+9. [Group settlement preserves per-payer consent](docs/adr/0009-group-settlement-preserves-per-payer-consent.md)
+10. [Scheduled intentions execute through the Transfer engine](docs/adr/0010-scheduled-intentions-execute-through-transfer-engine.md)
+11. [Financial Outlook is deterministic and non-authoritative](docs/adr/0011-financial-outlook-is-deterministic-and-non-authoritative.md)
 
 ## API specification
 

@@ -22,6 +22,7 @@ import {
   integrityHealthy,
   describeIntegrity,
 } from './lib/api.js';
+import { summaryFor } from './lib/summary.js';
 import { STATUS, CODES, TAKA, SIGNUP_GRANT } from './lib/config.js';
 
 const START_BALANCE = 1000 * TAKA;
@@ -125,3 +126,6 @@ export function teardown(data) {
       `     verdict:   ${ok ? `exactly ${EXPECTED_WINS} succeeded` : 'FAILED'}\n`,
   );
 }
+
+// Written to /results so tests/bench can assemble one report from all six runs.
+export const handleSummary = summaryFor('02-double-spend', '20 concurrent sends from a balance that funds 10 commit exactly 10');

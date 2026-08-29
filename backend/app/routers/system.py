@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_session
-from ..services import integrity
+from ..services import integrity, system_metrics
 
 router = APIRouter(tags=["system"])
 
@@ -54,6 +54,19 @@ def integrity_report(session: Session = Depends(get_session)):
     report = integrity.run(session)
     report["instance"] = settings.instance_id
     return report
+
+
+@router.get("/system-metrics")
+def system_metrics_report(session: Session = Depends(get_session)):
+    """Load, concurrency and database behaviour, read live like /integrity.
+
+    Unauthenticated for the same reason: it is the screen a sceptic is invited to
+    watch while someone else moves money, and it names no person, no phone number
+    and no individual balance. Everything here is a PostgreSQL read at the moment
+    of the call, except the latency block, which is this replica's own recent
+    requests and is labelled with its instance id.
+    """
+    return system_metrics.run(session)
 
 
 @router.get("/system-info")

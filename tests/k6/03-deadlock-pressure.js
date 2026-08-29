@@ -19,6 +19,7 @@ import {
   integrityHealthy,
   describeIntegrity,
 } from './lib/api.js';
+import { summaryFor } from './lib/summary.js';
 import { STATUS, TAKA } from './lib/config.js';
 
 const POOL_SIZE = 6;
@@ -119,3 +120,6 @@ export function teardown() {
       `     verdict:   ${ok ? 'zero deadlocks, ledger balanced' : 'FAILED'}\n`,
   );
 }
+
+// Written to /results so tests/bench can assemble one report from all six runs.
+export const handleSummary = summaryFor('03-deadlock-pressure', 'Bidirectional and group traffic never deadlocks under sorted lock acquisition');

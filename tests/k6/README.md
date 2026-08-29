@@ -27,7 +27,21 @@ re-asking rather than minting a fresh key, which would be a second movement.
 | 5 | [Replica kill](05-replica-kill.js) | SIGKILL a replica mid-flight → no money lost | — |
 | 6 | [Money Request payment storm](06-money-request-payment-storm.js) | 50 different-key pays → exactly one Transfer | — |
 
-## Running
+## Running all six as one repeatable pass
+
+```powershell
+pwsh tests/bench/run-proof.ps1
+```
+
+That brings the stack up, snapshots PostgreSQL either side of every scenario, kills a replica on a
+timer during scenario 5 rather than relying on an operator to type it at the right moment, and
+writes `docs/PROOF.md`. It exits non-zero if any scenario failed its own thresholds — the harness
+never decides that a run passed, k6 does.
+
+Each scenario also writes `tests/bench/results/<scenario>.json` on its own, so a single ad-hoc run
+still leaves something diffable behind.
+
+## Running one at a time
 
 Against the local stack:
 
@@ -56,6 +70,13 @@ required. The `teardown` of each prints a one-line verdict.
 The important distinction in scenario 5: **errors are expected, lost money is not.** Killing a replica
 *should* break the requests that were in flight on it. `http_req_failed` is deliberately permissive
 there; the assertion that matters is that the pool's total balance is unchanged.
+
+## After a replica restart, reload the gateway
+
+nginx resolves `api` to the replica addresses once, at startup. A container that is killed and
+restarted can return on a different address, and nginx will not re-resolve on its own — so the pool
+silently runs one member short for everything that follows. `run-proof.ps1` issues the reload for
+you; by hand it is `docker compose exec gateway nginx -s reload`.
 
 ## What these do not prove
 

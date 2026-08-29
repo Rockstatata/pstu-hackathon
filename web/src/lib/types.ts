@@ -599,6 +599,8 @@ export interface IntegrityReport {
   };
   totals: { issuedPoisha: number; heldPoisha: number; differencePoisha: number };
   instance: string;
+  /** What recomputing the five assertions cost on this call. Never cached. */
+  computedInMs: number;
 }
 
 export interface ReplicaInfo {
@@ -624,6 +626,86 @@ export interface SystemInfo {
     lockTimeoutMs: number;
   };
   replicas: ReplicaInfo[];
+}
+
+/**
+ * Operational metrics from `GET /system-metrics`. The API already speaks
+ * camelCase here and every figure is a plain count, ratio or millisecond value,
+ * so there is no wire/view split to make: nothing needs renaming and nothing
+ * needs converting. `*Poisha` fields are the exception and keep the suffix, per
+ * the rule that a minor-unit amount is always named for what it is.
+ */
+export interface LatencyWindow {
+  windowSize: number;
+  sampleCount: number;
+  observedTotal: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  p99Ms: number | null;
+  maxMs: number | null;
+}
+
+export interface EventCount {
+  total: number;
+  lastHour: number;
+}
+
+export interface ThroughputPoint {
+  minute: string;
+  transfers: number;
+  totalPoisha: number;
+}
+
+export interface SystemMetrics {
+  instance: string;
+  database: {
+    commits: number;
+    rollbacks: number;
+    commitRatioPercent: number | null;
+    deadlocks: number;
+    blockedOnLocks: number;
+    longestTransactionSeconds: number;
+    cacheHitPercent: number | null;
+    tempFiles: number;
+    activeConnections: number;
+    openConnections: number;
+    maxConnections: number;
+    databaseSizeBytes: number;
+  };
+  throughput: {
+    transfersLast60s: number;
+    transfersLast15m: number;
+    transfersLast60m: number;
+    peakTransfersPerMinute: number;
+    perMinute: ThroughputPoint[];
+  };
+  concurrency: {
+    idempotentReplays: EventCount;
+    rejectedOverspends: EventCount;
+    stepUpsTriggered: EventCount;
+    policyRejections: EventCount;
+    transfersCompleted: EventCount;
+  };
+  retention: {
+    idempotencyRecords: number;
+    auditEvents: number;
+    rateLimitCounters: number;
+    journalEntries: number;
+  };
+  /** This replica only — process memory, not database truth. */
+  latency: { all: LatencyWindow; writes: LatencyWindow };
+  /** This replica only. */
+  pool: {
+    instance: string;
+    inUse: number;
+    capacity: number;
+    poolSize: number;
+    maxOverflow: number;
+    overflowInUse: number;
+    utilizationPercent: number | null;
+    checkoutTimeoutSeconds: number;
+  };
+  computedInMs: number;
 }
 
 /** The error envelope every failure arrives in. */

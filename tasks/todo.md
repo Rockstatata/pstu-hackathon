@@ -414,3 +414,194 @@ reduction applied to Typical Money Out. The screen names its assumptions and for
 Verification: 35 backend tests pass against PostgreSQL; frontend lint and production build pass with
 22 routes; the authenticated endpoint was exercised through the three-replica gateway; the final
 Integrity Check remained `HEALTHY` with zero difference; and `/outlook` was visually checked at 390px.
+
+---
+
+# Post-deadline hardening — audit, admin console, and the proof harness
+
+Plan written 15:02, 29 Aug 2026, after the 15:00 boundary. Scope requested: scan for scalability
+and UX improvements, then make concurrency / database behaviour presentable to judges. Amended
+mid-plan: the admin console must ship both themes with a toggle, and carry more insight.
+
+Model note: Opus at standard effort is right for the audit and the metrics design; the k6 harness
+scripting alone would be fine on Sonnet.
+
+## Part 1 — Admin console theming (requested)
+
+- [x] Remove the unconditional dark palette from `.admin-experience`; let the console inherit
+      `:root` / `.dark` so both themes ship. Keep the class as the ops-specific hook.
+- [x] Set `color-scheme` per theme rather than hard-coding `dark`.
+- [x] Mount `ThemeToggle` in `AdminShell` (sidebar footer and mobile header).
+- [x] Re-check contrast of the verdict banner and assertion rows in light mode.
+- [x] Update `docs/design-system.md`: I1 is no longer dark-only.
+
+## Part 2 — Admin console insight (requested)
+
+Everything below is read live from PostgreSQL. No number is computed in the browser, no number is
+cached, and anything scoped to one replica says so on the card.
+
+- [x] `GET /api/v1/system-metrics` — new read-only endpoint:
+      - database: xact_commit / xact_rollback / commit ratio, deadlocks, cache hit ratio,
+        active connections vs max_connections, database size
+      - throughput: transfers and Journal Entries in the last 60s and 15m, busiest minute in the
+        last hour, per-minute series for a sparkline
+      - concurrency: idempotent replays, rejected overspends, step-ups, policy rejections,
+        lock timeouts — last hour and all time
+      - latency: this replica's rolling p50 / p95 / p99 over its last 500 requests, labelled
+        per-instance because it is process memory, not database truth
+      - pool: SQLAlchemy checked-out / size / overflow for this replica
+- [x] Rolling latency ring buffer in the request middleware (bounded, allocation-free per request)
+- [x] Admin panel sections: Throughput (with per-minute sparkline), Database health, Concurrency
+      defence, Latency. Token-driven SVG, no chart library, no emoji.
+- [x] Wire types + mapper in `lib/api.ts` only, per the handoff rule.
+
+## Part 3 — Scalability fixes found in the audit
+
+- [x] **Connection pool vs thread pool.** Sync endpoints run on anyio's 40-thread default while the
+      engine offers 10+20=30, and rate-limited paths open a second session while holding one —
+      so ~15 concurrent rate-limited requests per replica exhausts the pool and 503s. Size both
+      from settings and set an explicit `pool_timeout`.
+- [x] **Retention.** `idempotency_records`, `rate_limit_counters` and `audit_events` grow without
+      bound. Add a bounded purge sweep to the scheduler loop.
+- [x] **`/integrity` cost.** 12 aggregate queries, ~110ms at 23k Journal Entries, growing linearly,
+      polled every 5s per open dashboard. Keep it live — add `computedInMs` so the cost is visible
+      and honest rather than hidden.
+
+## Part 4 — The proof harness (judge-facing)
+
+- [x] `handleSummary()` in each k6 scenario → machine-readable JSON per scenario
+- [x] `tests/bench/collect.py` — snapshot `pg_stat_database` and the integrity report before and
+      after each scenario, merge with the k6 summaries
+- [x] `tests/bench/run-proof.ps1` — one command: all six scenarios in order, replica kill automated
+- [x] `tests/bench/report.py` — render `docs/PROOF.md` and a self-contained offline `proof.html`
+- [x] Record what the run does **not** prove, in the same document
+
+
+---
+
+## Review — what changed and why
+
+### Admin console theming (the reported bug)
+
+`.admin-experience` in `web/src/app/globals.css` re-declared the entire dark palette
+unconditionally, so the console could never be light no matter what the toggle said — and the
+toggle was never mounted in `AdminShell` in the first place. The block now declares only
+`color-scheme` (light at base, dark under `.dark`) and every colour resolves from `:root` / `.dark`,
+so there is still exactly one measured palette. `ThemeToggle` is mounted in the sidebar footer and
+in the mobile header, mirroring `AppShell`. Verified in the compiled CSS: the rule emits
+`color-scheme` and nothing else. `docs/design-system.md` and `CLAUDE.md` no longer claim I1 is
+dark-only.
+
+### Admin console insight
+
+New `GET /api/v1/system-metrics`, read live like `/integrity` and unauthenticated for the same
+reason. It carries database behaviour from `pg_stat_database` (commits, rollbacks, deadlocks,
+cache hit rate, connections, queries blocked on locks), measured throughput per minute for the last
+hour, the audit-derived record of what concurrency control refused, stored-row counts, and — scoped
+to one replica and labelled as such — request latency percentiles and connection pool use.
+
+Four new sections render it: Throughput with a token-drawn sixty-bar chart, Database behaviour,
+Response time with pool utilisation, and a table of what concurrency control refused. `/integrity`
+now also reports `computedInMs`, so the cost of recomputing the proof is visible rather than
+hidden — the honest alternative to caching a verdict that would then prove nothing.
+
+### Scalability fixes
+
+- **Connection pool sized against the thread pool.** Sync endpoints ran on anyio's 40-thread
+  default while the engine offered 30 connections, and rate-limited paths hold two at once. Pool is
+  now 20+20 with the thread pool bounded to 20, so `threads * 2 <= capacity` and exhaustion is
+  structurally impossible rather than merely unlikely.
+- **Pool checkout timeout cut to 5s** from SQLAlchemy's 30s default, which outlived nginx's 15s
+  read timeout — the caller would have been told the outcome was unknown for a request that had not
+  started.
+- **Retention sweeps** for `rate_limit_counters` and `idempotency_records`, bounded per pass and
+  run from the scheduler. `audit_events` and `journal_entries` are deliberately never swept, and
+  the module says why.
+- **`transfers_created_at_idx`**, without which the console's per-minute query would seq-scan the
+  whole table every five seconds during the load test it is measuring.
+
+### The uncertain-outcome UX defect
+
+`POST /transfers` answering `503 FINANCIAL_CORE_UNAVAILABLE` or `409 REQUEST_IN_PROGRESS` was
+rendered as "Transfer failed. No transaction ID was issued." Both mean the outcome is *unknown*,
+and the backend's own message says to check history before retrying. Claiming a definite failure
+for money that may have moved is the exact property this build is judged on. `isUncertainOutcome()`
+now classifies those codes plus `NETWORK` and `INTERNAL_ERROR`; the send flow keeps the compose
+screen and the same Idempotency-Key, and shows an amber "we do not know whether this went through"
+panel with a link to history — amber because it needs a decision, not red, because nothing failed.
+The `NETWORK` sentence no longer claims "Nothing was sent."
+
+### The proof harness
+
+`tests/bench/` — `run-proof.ps1` runs all six k6 scenarios in order, snapshots PostgreSQL either
+side of each, kills a replica on a timer during scenario 5 instead of relying on an operator, and
+renders `docs/PROOF.md`. Each scenario writes a machine-readable summary via `handleSummary`.
+
+Two framing decisions in the report, both about not overselling:
+
+- k6 scores every non-2xx as a failed request. In this system a `400 INSUFFICIENT_FUNDS` is the row
+  lock working. The row is labelled with its real metric name and carries the reason, rather than
+  reporting a working safeguard as a 35% failure rate.
+- Commit ratio is presented next to what the rollbacks were. A duplicate-storm scenario is supposed
+  to roll back most of what it starts.
+
+The harness never decides that a run passed — k6 does, from thresholds declared before the run.
+
+### Verification
+
+35/35 backend unit tests, black-box acceptance `PASS`, OpenAPI drift check green after regenerating
+the contract, `tsc` clean, `eslint` clean, `next build` compiles. k6 scenarios 01, 02 and 03 ran
+green against the new pool settings.
+
+### Known limits, unchanged
+
+Single PostgreSQL writer, no failover, no network-partition testing. The load scenarios run at tens
+of virtual users and demonstrate correctness under concurrency, not scale. `docs/PROOF.md` states
+this in its own words at the end of every run.
+
+---
+
+# Documentation refresh — README and the two evidence documents
+
+Plan written 29 Aug 2026, after the post-deadline hardening work landed. The three top-level
+documents were last written before `system-metrics`, retention, the pool sizing, the admin console
+theming, and the `tests/bench` proof harness existed, and before Scheduled Transfers, Notifications,
+Smart Group Settlement, and Financial Outlook shipped. They currently understate the system and, in
+three places, cite the wrong ADR.
+
+Model note: Opus at standard effort for the evidence sections, which have to be written against the
+actual diff rather than summarized; the README table edits alone would be fine on Sonnet.
+
+## README.md
+
+- [ ] Project status: add Financial Outlook, the operations console, retention sweeps, and the proof
+      harness; correct the route count.
+- [ ] Feature scope: add the behaviour shipped after the merge boundary.
+- [ ] Component responsibilities: add the scheduler worker, `system_metrics.py`, `retention.py`,
+      and `observability.py`.
+- [ ] Technology choices: the idempotency trade-off no longer reads "no retention process"; add the
+      pool-sizing and per-replica-latency rows; list ADRs 8–11.
+- [ ] Endpoint summary: add the fourteen endpoints missing from the table, including
+      `GET /system-metrics`.
+- [ ] Reliability: document `tests/bench/run-proof.ps1` and `docs/PROOF.md` as the one-command pass.
+- [ ] Configuration: add the four connection/thread pool variables.
+- [ ] Observability: describe the operations console, `computedInMs`, and the per-replica boundary.
+- [ ] Repository guide and documentation map: new modules, `tests/bench/`, `docs/PROOF.md`.
+- [ ] Roadmap: retire the near-term items that shipped.
+
+## ARCHITECTURE_DECISIONS_EVIDENCE.md
+
+- [ ] Fix the three wrong ADR citations (idempotency and replica resilience are not ADR-0004; Money
+      Requests are not ADR-0009).
+- [ ] Add the decisions taken during hardening: pool sized against the thread pool, bounded retention
+      with a stated exclusion list, `/integrity` cost published rather than cached away, latency as
+      the one deliberate in-memory number, and the throughput index.
+- [ ] Add ADR-0010 and ADR-0011 sections so every ADR in `docs/adr/` is traced.
+- [ ] Add the proof harness to the testing strategy: k6 decides, the harness only reports.
+
+## FEATURE_SHOWCASE_AND_EVIDENCE.md
+
+- [ ] Add the four shipped features with no section: Scheduled Transfers, Notifications, Smart Group
+      Settlement, Financial Outlook.
+- [ ] Add the operations console as a feature, since it is the screen judges are actually shown.
+- [ ] Correct the core-feature table, which credits the wrong test file in three rows.

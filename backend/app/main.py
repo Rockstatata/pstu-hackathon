@@ -6,6 +6,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+import anyio.to_thread
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +14,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from . import observability
 from .config import settings
 from .db import SessionLocal, apply_schema
 from .errors import DomainError, domain_error_handler
@@ -60,6 +62,16 @@ def bootstrap() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Sync endpoints run on anyio's thread pool. Its default of 40 is wider than
+    # the connection pool they all contend for, so under load the excess threads
+    # would queue on the pool rather than on the database and time out holding
+    # nothing. Bound it to the number we sized the pool for.
+    limiter = anyio.to_thread.current_default_thread_limiter()
+    limiter.total_tokens = settings.request_threadpool_size
+    # Read back rather than echoing the setting, and stash it: this is the only
+    # place with an event loop to ask on.
+    observability.set_thread_limit(int(limiter.total_tokens))
+
     bootstrap()
     heartbeats.beat()
 
@@ -165,6 +177,9 @@ async def request_boundary(request: Request, call_next):
 
 
 def _finish_request(request: Request, response, started: float):
+    latency_ms = (time.perf_counter() - started) * 1000
+    observability.record(request.method, latency_ms)
+
     trace_id = request.state.trace_id
     response.headers["X-Trace-Id"] = trace_id
     response.headers["X-Instance"] = settings.instance_id
@@ -181,7 +196,7 @@ def _finish_request(request: Request, response, started: float):
                 "operation": f"{request.method} {request.url.path}",
                 "status": response.status_code,
                 "result": getattr(request.state, "result", "SUCCESS"),
-                "latencyMs": round((time.perf_counter() - started) * 1000, 2),
+                "latencyMs": round(latency_ms, 2),
             },
             separators=(",", ":"),
         ),

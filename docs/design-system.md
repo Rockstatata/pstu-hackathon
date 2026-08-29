@@ -237,7 +237,12 @@ in a sentence. Amber because a step-up is a decision required, not a failure.
 **Nav** — `--bg-sidebar`. Active item takes a `--purple-soft` fill, `--primary-text` label and icon,
 and a 3px `--primary` rule (left at `lg`, top on the mobile tab bar). Inactive `--text-secondary`.
 
-**I1 Integrity Dashboard** — always dark, whatever the app theme; it is a projector surface. `--bg`
+**I1 Integrity Dashboard** — follows the chosen theme like every other screen, and carries its own
+`ThemeToggle` in the sidebar and the mobile header. It was specified dark-only on the assumption
+that it only ever appears on a projector; it is also read on a laptop in a lit room, and a console
+that cannot be read is not evidence of anything. `.admin-experience` therefore declares no colour of
+its own and only sets `color-scheme`, so every token still resolves from the one measured palette.
+`--bg`
 ground, `MetricTile` on `--surface`, numbers at 56px tnum. `IntegrityRow` puts the assertion name in
 `--text-secondary`, the value in `--text`, and a `Check` in `--success` or an `X` in `--danger`.
 `VerdictBanner`: HEALTHY is `--success-surface` with `--success-text`, DEGRADED is `--danger-surface`
@@ -254,7 +259,9 @@ override the OS.
 
 - Default is **light**. Resolved before paint by an inline script reading `localStorage.theme`, then
   `prefers-color-scheme` — no flash, no hydration mismatch.
-- I1 forces `.dark` on its own container and leaves the global preference alone.
+- I1 inherits the global theme rather than forcing one. `.admin-experience` sets `color-scheme`
+  per theme and nothing else, because form controls and scrollbars read that from the element while
+  every colour comes from a custom property.
 - `<meta name="theme-color">` follows the resolved theme so the mobile browser chrome matches.
 - Both themes ship from day one. Retrofitting dark later is the expensive version; declaring the
   tokens twice at Phase 0 is nearly free. This is why the PRD's P2 "dark mode" cut item no longer

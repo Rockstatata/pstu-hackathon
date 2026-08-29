@@ -7,22 +7,31 @@ import {
   Database,
   Gauge,
   HeartPulse,
+  Layers,
   RefreshCw,
   ShieldCheck,
+  Timer,
+  TrendingUp,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ThroughputChart } from "@/components/admin/ThroughputChart";
 import { AmountDisplay } from "@/components/money/AmountDisplay";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ApiError, api } from "@/lib/api";
-import type { IntegrityReport, SystemInfo } from "@/lib/types";
+import type { EventCount, IntegrityReport, SystemInfo, SystemMetrics } from "@/lib/types";
 import { useI18n } from "@/components/i18n/LanguageProvider";
 
 /**
- * The judge-facing screen. Every number on it is read live from
- * `GET /integrity` and `GET /system-info` on each refresh — nothing here is
- * cached, seeded, or computed in the browser. If the backend is unreachable
- * this page says so; it never falls back to a plausible-looking figure.
+ * The judge-facing screen. Every number on it is read live from `GET /integrity`,
+ * `GET /system-info` and `GET /system-metrics` on each refresh — nothing here is
+ * cached, seeded, or computed in the browser. If the backend is unreachable this
+ * page says so; it never falls back to a plausible-looking figure.
+ *
+ * Two blocks are scoped to a single replica rather than to the system: response
+ * time and connection pool use are read from the process that answered this
+ * refresh, because they live in its memory. Both cards name the instance, so a
+ * per-replica figure is never mistaken for a system-wide one.
  */
 const REFRESH_MS = 5000;
 
@@ -30,6 +39,7 @@ export default function AdminDashboardPage() {
   const { t, formatDate, formatNumber } = useI18n();
   const [integrity, setIntegrity] = useState<IntegrityReport | null>(null);
   const [system, setSystem] = useState<SystemInfo | null>(null);
+  const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<string | null>(null);
 
@@ -37,11 +47,12 @@ export default function AdminDashboardPage() {
     let active = true;
 
     const read = () => {
-      Promise.all([api.integrity(), api.systemInfo()])
-        .then(([report, info]) => {
+      Promise.all([api.integrity(), api.systemInfo(), api.systemMetrics()])
+        .then(([report, info, operational]) => {
           if (!active) return;
           setIntegrity(report);
           setSystem(info);
+          setMetrics(operational);
           setRefreshedAt(new Date().toISOString());
           setError(null);
         })
@@ -133,7 +144,10 @@ export default function AdminDashboardPage() {
             <h2 className="text-[18px] font-semibold">{t("Ledger assertions")}</h2>
           </div>
           <p className="mt-2 text-[13px] leading-5 text-text-secondary">
-            {t("Each assertion counts the rows that break it, so zero is the only passing answer.")}
+            {t("Each assertion counts the rows that break it, so zero is the only passing answer.")}{" "}
+            {t("Recomputed on this refresh in {ms} ms — nothing here is cached.", {
+              ms: formatNumber(integrity.computedInMs),
+            })}
           </p>
           <div className="mt-5 divide-y divide-divider border-y border-divider">
             {integrity.assertions.map((assertion) => (
@@ -215,6 +229,172 @@ export default function AdminDashboardPage() {
         <Metric label={t("Assertions passing")} value={integrity.assertions.filter((a) => a.pass).length} icon={Check} tone="success" />
       </section>
 
+      {metrics && (
+        <>
+          <section className="mt-8">
+            <article className="card p-5 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp aria-hidden className="size-5 text-primary-text" />
+                  <h2 className="text-[18px] font-semibold">{t("Throughput")}</h2>
+                </div>
+                <p className="text-[12px] text-text-secondary">
+                  {t("Completed Transfers per minute, counted from the Ledger")}
+                </p>
+              </div>
+              <dl className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+                <Plain label={t("Last 60 seconds")} value={formatNumber(metrics.throughput.transfersLast60s)} />
+                <Plain label={t("Last 15 minutes")} value={formatNumber(metrics.throughput.transfersLast15m)} />
+                <Plain label={t("Last hour")} value={formatNumber(metrics.throughput.transfersLast60m)} />
+                <Plain label={t("Busiest minute")} value={formatNumber(metrics.throughput.peakTransfersPerMinute)} />
+              </dl>
+              <ThroughputChart points={metrics.throughput.perMinute} />
+            </article>
+          </section>
+
+          <section className="mt-8 grid gap-5 xl:grid-cols-2">
+            <article className="card p-5 sm:p-6">
+              <div className="flex items-center gap-2">
+                <Database aria-hidden className="size-5 text-primary-text" />
+                <h2 className="text-[18px] font-semibold">{t("Database behaviour")}</h2>
+              </div>
+              <p className="mt-2 text-[13px] leading-5 text-text-secondary">
+                {t("Read from PostgreSQL's own statistics, not from anything this application counted. A rollback here is usually a deliberate refusal — an overspend stopped inside the lock, or a duplicate key losing its race.")}
+              </p>
+              <dl className="mt-5 grid gap-5 sm:grid-cols-2">
+                <Plain label={t("Transactions committed")} value={formatNumber(metrics.database.commits)} />
+                <Plain label={t("Rolled back")} value={formatNumber(metrics.database.rollbacks)} />
+                <Percent label={t("Commit rate")} value={metrics.database.commitRatioPercent} />
+                <Percent label={t("Buffer cache hit rate")} value={metrics.database.cacheHitPercent} />
+                <Verdict
+                  label={t("Deadlocks")}
+                  value={formatNumber(metrics.database.deadlocks)}
+                  good={metrics.database.deadlocks === 0}
+                  hint={t("Lock ordering is deterministic, so this stays at zero")}
+                />
+                <Verdict
+                  label={t("Queries waiting on a lock")}
+                  value={formatNumber(metrics.database.blockedOnLocks)}
+                  good={metrics.database.blockedOnLocks === 0}
+                  hint={t("At this instant")}
+                />
+                <Plain
+                  label={t("Connections open")}
+                  value={t("{open} of {max}", {
+                    open: formatNumber(metrics.database.openConnections),
+                    max: formatNumber(metrics.database.maxConnections),
+                  })}
+                />
+                <Plain
+                  label={t("Longest open transaction")}
+                  value={t("{seconds}s", {
+                    seconds: formatNumber(metrics.database.longestTransactionSeconds),
+                  })}
+                />
+              </dl>
+            </article>
+
+            <article className="card p-5 sm:p-6">
+              <div className="flex items-center gap-2">
+                <Timer aria-hidden className="size-5 text-primary-text" />
+                <h2 className="text-[18px] font-semibold">{t("Response time")}</h2>
+              </div>
+              <p className="mt-2 text-[13px] leading-5 text-text-secondary">
+                {t("This replica only, over its last {window} requests. Latency is the one figure held in process memory rather than in the database, so it belongs to the instance that answered this refresh and not to the system.", {
+                  window: formatNumber(metrics.latency.all.windowSize),
+                })}
+              </p>
+              <p className="tnum mt-1 text-[12px] text-text-secondary">{metrics.instance}</p>
+              <dl className="mt-5 grid gap-5 sm:grid-cols-2">
+                <Milliseconds label={t("Median, all requests")} ms={metrics.latency.all.p50Ms} />
+                <Milliseconds label={t("95th percentile, all requests")} ms={metrics.latency.all.p95Ms} />
+                <Milliseconds label={t("Median, writes")} ms={metrics.latency.writes.p50Ms} />
+                <Milliseconds label={t("95th percentile, writes")} ms={metrics.latency.writes.p95Ms} />
+              </dl>
+
+              <div className="mt-6 border-t border-divider pt-5">
+                <div className="flex items-center gap-2">
+                  <Layers aria-hidden className="size-4 text-primary-text" />
+                  <h3 className="text-[15px] font-semibold">{t("Connection pool")}</h3>
+                </div>
+                <p className="mt-2 text-[13px] leading-5 text-text-secondary">
+                  {t("Sized so that even two connections per in-flight request cannot exhaust it. A checkout waits at most {seconds}s before failing, which is deliberately shorter than the gateway's read timeout.", {
+                    seconds: formatNumber(metrics.pool.checkoutTimeoutSeconds),
+                  })}
+                </p>
+                <p className="tnum mt-4 text-[clamp(1.75rem,4vw,2.5rem)] font-bold leading-none">
+                  {t("{inUse} of {capacity}", {
+                    inUse: formatNumber(metrics.pool.inUse),
+                    capacity: formatNumber(metrics.pool.capacity),
+                  })}
+                </p>
+                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-subtle">
+                  <div
+                    className="h-full rounded-full bg-primary"
+                    style={{ width: `${Math.max(2, Math.min(100, metrics.pool.utilizationPercent ?? 0))}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-[12px] text-text-secondary">
+                  {t("Connections in use on this replica")}
+                </p>
+              </div>
+            </article>
+          </section>
+
+          <section className="mt-8">
+            <article className="card p-5 sm:p-6">
+              <div className="flex items-center gap-2">
+                <ShieldCheck aria-hidden className="size-5 text-primary-text" />
+                <h2 className="text-[18px] font-semibold">{t("What concurrency control refused")}</h2>
+              </div>
+              <p className="mt-2 text-[13px] leading-5 text-text-secondary">
+                {t("Each row is written inside the transaction whose outcome it describes, so these are decisions the money path recorded — not a tally a process kept and could lose on restart.")}
+              </p>
+              <div className="mt-5 overflow-x-auto">
+                <table className="w-full min-w-120 border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-divider text-[12px] font-semibold uppercase tracking-wide text-text-secondary">
+                      <th scope="col" className="py-2 pr-4">{t("Decision")}</th>
+                      <th scope="col" className="py-2 pr-4 text-right">{t("Last hour")}</th>
+                      <th scope="col" className="py-2 text-right">{t("All time")}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-divider">
+                    <DecisionRow
+                      label={t("Duplicate requests replayed, money moved once")}
+                      counts={metrics.concurrency.idempotentReplays}
+                    />
+                    <DecisionRow
+                      label={t("Overspends refused inside the row lock")}
+                      counts={metrics.concurrency.rejectedOverspends}
+                    />
+                    <DecisionRow
+                      label={t("Step-ups demanded before committing")}
+                      counts={metrics.concurrency.stepUpsTriggered}
+                    />
+                    <DecisionRow
+                      label={t("Transfers refused by policy limits")}
+                      counts={metrics.concurrency.policyRejections}
+                    />
+                    <DecisionRow
+                      label={t("Transfers committed")}
+                      counts={metrics.concurrency.transfersCompleted}
+                    />
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-5 border-t border-divider pt-4 text-[12px] leading-5 text-text-secondary">
+                {t("Stored rows: {idempotency} idempotency records, {audit} audit events, {journal} Journal Entries. Idempotency records and rate-limit counters are swept on a retention schedule; audit events and Journal Entries are never deleted.", {
+                  idempotency: formatNumber(metrics.retention.idempotencyRecords),
+                  audit: formatNumber(metrics.retention.auditEvents),
+                  journal: formatNumber(metrics.retention.journalEntries),
+                })}
+              </p>
+            </article>
+          </section>
+        </>
+      )}
+
       <section className="mt-8">
         <article className="card p-5 sm:p-6">
           <div className="flex items-center gap-2">
@@ -269,6 +449,78 @@ function Plain({ label, value }: { label: string; value: string }) {
       <dt className="text-[13px] font-medium text-text-secondary">{label}</dt>
       <dd className="tnum mt-1 text-[18px] font-semibold">{value}</dd>
     </div>
+  );
+}
+
+/** A figure the API may not have yet says so, rather than rendering a plausible zero. */
+function Percent({ label, value }: { label: string; value: number | null }) {
+  const { t, formatNumber } = useI18n();
+  return (
+    <Plain
+      label={label}
+      value={value === null ? t("Not measured yet") : `${formatNumber(value)}%`}
+    />
+  );
+}
+
+function Milliseconds({ label, ms }: { label: string; ms: number | null }) {
+  const { t, formatNumber } = useI18n();
+  return (
+    <Plain
+      label={label}
+      value={ms === null ? t("No requests yet") : t("{ms} ms", { ms: formatNumber(ms) })}
+    />
+  );
+}
+
+/**
+ * A figure whose value carries a verdict, so it gets a colour and a word — never
+ * a colour alone. Zero deadlocks is the expected reading, not a lucky one, so
+ * the healthy state is stated plainly rather than celebrated.
+ */
+function Verdict({
+  label,
+  value,
+  good,
+  hint,
+}: {
+  label: string;
+  value: string;
+  good: boolean;
+  hint: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <div>
+      <dt className="text-[13px] font-medium text-text-secondary">{label}</dt>
+      <dd className="mt-1 flex flex-wrap items-baseline gap-2">
+        <span className="tnum text-[18px] font-semibold">{value}</span>
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold ${good ? "bg-success-surface text-success-text" : "bg-danger-surface text-danger-text"}`}
+        >
+          {good ? <Check aria-hidden className="size-3.5" /> : <X aria-hidden className="size-3.5" />}
+          {good ? t("As expected") : t("Investigate")}
+        </span>
+      </dd>
+      <p className="mt-1 text-[12px] leading-4 text-text-secondary">{hint}</p>
+    </div>
+  );
+}
+
+function DecisionRow({ label, counts }: { label: string; counts: EventCount }) {
+  const { formatNumber } = useI18n();
+  return (
+    <tr>
+      <th scope="row" className="py-3 pr-4 text-[14px] font-medium">
+        {label}
+      </th>
+      <td className="tnum py-3 pr-4 text-right text-[15px] font-semibold">
+        {formatNumber(counts.lastHour)}
+      </td>
+      <td className="tnum py-3 text-right text-[15px] font-semibold">
+        {formatNumber(counts.total)}
+      </td>
+    </tr>
   );
 }
 

@@ -165,7 +165,30 @@ def main():
     detail = call(
         "GET", f"/transfers/{committed[1]['reference']}", token=requester["token"]
     )
-    assert detail[0] == 200 and detail[1]["reversible"] is False
+    assert detail[0] == 200 and detail[1]["reversible"] is True
+
+    # Reversal is a consent request followed by a compensating Transfer, never
+    # mutation or deletion of the original Journal Entries.
+    reversal_key = uuid.uuid4().hex
+    reversal = call(
+        "POST",
+        f"/transfers/{committed[1]['reference']}/reversal-request",
+        token=requester["token"],
+        key=reversal_key,
+    )
+    assert reversal[0] == 201 and reversal[1]["requestKind"] == "REVERSAL"
+    reversal_pay = call(
+        "POST",
+        f"/money-requests/{reversal[1]['requestId']}/pay",
+        token=payer["token"],
+        key=uuid.uuid4().hex,
+        body={"pin": payer["pin"]},
+    )
+    assert reversal_pay[0] == 201 and reversal_pay[1]["kind"] == "REVERSAL"
+    reversed_detail = call(
+        "GET", f"/transfers/{committed[1]['reference']}", token=requester["token"]
+    )
+    assert reversed_detail[0] == 200 and reversed_detail[1]["status"] == "REVERSED"
 
     # Complete Money Request lifecycle, authorization privacy, and races.
     create_key = uuid.uuid4().hex

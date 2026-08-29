@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bird, Settings } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
-import { NotificationBell } from "@/components/ui/NotificationBell";
-import { api } from "@/lib/api";
+import type { ReactNode } from "react";
 import { shippedTabs } from "@/lib/nav";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { NotificationBell } from "@/components/ui/NotificationBell";
 
 function isCurrent(pathname: string, href: string) {
   return href === "/" ? pathname === href : pathname.startsWith(href);
@@ -16,15 +15,6 @@ function isCurrent(pathname: string, href: string) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const tabs = shippedTabs();
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    api.notifications()
-      .then(({ items }) => active && setUnreadNotifications(items.filter((item) => item.readAt === null).length))
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, [pathname]);
 
   return (
     <div className="min-h-dvh bg-bg text-text lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
@@ -54,14 +44,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="min-w-0 pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-divider bg-bg/95 px-4 backdrop-blur lg:px-8">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-divider bg-bg px-4 lg:px-8">
           <Link href="/" className="flex min-h-11 items-center gap-2 text-[18px] font-semibold lg:hidden">
             <Bird aria-hidden className="size-5 text-primary" strokeWidth={2.25} />
             Chorui
           </Link>
           <span className="hidden text-[13px] font-medium text-text-secondary lg:block">Move money with care.</span>
           <div className="flex items-center gap-1">
-            <NotificationBell unread={unreadNotifications} />
+            <NotificationBell />
             <Link href="/settings" className="inline-flex size-11 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-subtle hover:text-text" aria-label="Profile and settings">
               <Settings aria-hidden className="size-5" />
             </Link>

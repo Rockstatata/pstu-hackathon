@@ -1,6 +1,266 @@
 {
   "components": {
     "schemas": {
+      "CashEventResource": {
+        "properties": {
+          "amountPoisha": {
+            "title": "Amountpoisha",
+            "type": "integer"
+          },
+          "countedCashPoisha": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Countedcashpoisha"
+          },
+          "eventId": {
+            "title": "Eventid",
+            "type": "string"
+          },
+          "expectedAfterPoisha": {
+            "title": "Expectedafterpoisha",
+            "type": "integer"
+          },
+          "expectedBeforePoisha": {
+            "title": "Expectedbeforepoisha",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "CASH_IN",
+              "CASH_OUT",
+              "RECONCILIATION"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "title": "Observedat",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "recordedAt": {
+            "format": "date-time",
+            "title": "Recordedat",
+            "type": "string"
+          },
+          "sequenceNumber": {
+            "title": "Sequencenumber",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "SIMULATOR",
+              "DEVICE",
+              "USER"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "eventId",
+          "sequenceNumber",
+          "kind",
+          "amountPoisha",
+          "expectedBeforePoisha",
+          "expectedAfterPoisha",
+          "countedCashPoisha",
+          "source",
+          "reason",
+          "observedAt",
+          "recordedAt"
+        ],
+        "title": "CashEventResource",
+        "type": "object"
+      },
+      "CashMutationResource": {
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/CashEventResource"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/SmartWalletResource"
+          }
+        },
+        "required": [
+          "event",
+          "wallet"
+        ],
+        "title": "CashMutationResource",
+        "type": "object"
+      },
+      "CashObservationBody": {
+        "additionalProperties": false,
+        "properties": {
+          "amountPoisha": {
+            "exclusiveMinimum": 0.0,
+            "title": "Amountpoisha",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "CASH_IN",
+              "CASH_OUT"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 140,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "kind",
+          "amountPoisha"
+        ],
+        "title": "CashObservationBody",
+        "type": "object"
+      },
+      "ConnectionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connected"
+        ],
+        "title": "ConnectionBody",
+        "type": "object"
+      },
+      "CreateExpenseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 140,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "exactShares": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExactShare"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exactshares"
+          },
+          "paidByUserId": {
+            "title": "Paidbyuserid",
+            "type": "string"
+          },
+          "participantUserIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Participantuserids"
+          },
+          "percentageShares": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PercentageShare"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percentageshares"
+          },
+          "splitType": {
+            "enum": [
+              "EQUAL",
+              "EXACT",
+              "PERCENTAGE"
+            ],
+            "title": "Splittype",
+            "type": "string"
+          },
+          "totalPoisha": {
+            "exclusiveMinimum": 0.0,
+            "title": "Totalpoisha",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "description",
+          "paidByUserId",
+          "totalPoisha",
+          "splitType"
+        ],
+        "title": "CreateExpenseBody",
+        "type": "object"
+      },
+      "CreateGroupBody": {
+        "additionalProperties": false,
+        "properties": {
+          "memberPhones": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 19,
+            "minItems": 1,
+            "title": "Memberphones",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "memberPhones"
+        ],
+        "title": "CreateGroupBody",
+        "type": "object"
+      },
       "CreateMoneyRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -28,6 +288,55 @@
         "title": "CreateMoneyRequestBody",
         "type": "object"
       },
+      "CreateScheduledTransferBody": {
+        "additionalProperties": false,
+        "properties": {
+          "amountPoisha": {
+            "exclusiveMinimum": 0.0,
+            "title": "Amountpoisha",
+            "type": "integer"
+          },
+          "executeAt": {
+            "format": "date-time",
+            "title": "Executeat",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 140,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "pin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin"
+          },
+          "recipientPhone": {
+            "title": "Recipientphone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "recipientPhone",
+          "amountPoisha",
+          "executeAt"
+        ],
+        "title": "CreateScheduledTransferBody",
+        "type": "object"
+      },
       "Credentials": {
         "properties": {
           "phone": {
@@ -46,6 +355,26 @@
           "pin"
         ],
         "title": "Credentials",
+        "type": "object"
+      },
+      "ExactShare": {
+        "additionalProperties": false,
+        "properties": {
+          "amountPoisha": {
+            "exclusiveMinimum": 0.0,
+            "title": "Amountpoisha",
+            "type": "integer"
+          },
+          "userId": {
+            "title": "Userid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "amountPoisha"
+        ],
+        "title": "ExactShare",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -85,7 +414,10 @@
             "type": "string"
           },
           "kind": {
-            "const": "P2P",
+            "enum": [
+              "P2P",
+              "REVERSAL"
+            ],
             "title": "Kind",
             "type": "string"
           },
@@ -189,6 +521,17 @@
             "title": "Expiresat",
             "type": "string"
           },
+          "originalTransferReference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Originaltransferreference"
+          },
           "payer": {
             "$ref": "#/components/schemas/SafeIdentity"
           },
@@ -202,6 +545,14 @@
           },
           "requestId": {
             "title": "Requestid",
+            "type": "string"
+          },
+          "requestKind": {
+            "enum": [
+              "STANDARD",
+              "REVERSAL"
+            ],
+            "title": "Requestkind",
             "type": "string"
           },
           "requester": {
@@ -254,7 +605,9 @@
           "transferReference",
           "createdAt",
           "expiresAt",
-          "resolvedAt"
+          "resolvedAt",
+          "requestKind",
+          "originalTransferReference"
         ],
         "title": "MoneyRequestResource",
         "type": "object"
@@ -277,6 +630,27 @@
           }
         },
         "title": "PayMoneyRequestBody",
+        "type": "object"
+      },
+      "PercentageShare": {
+        "additionalProperties": false,
+        "properties": {
+          "percentageBps": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10000.0,
+            "title": "Percentagebps",
+            "type": "integer"
+          },
+          "userId": {
+            "title": "Userid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "percentageBps"
+        ],
+        "title": "PercentageShare",
         "type": "object"
       },
       "ReceiptRecipient": {
@@ -319,6 +693,28 @@
           "amountPoisha"
         ],
         "title": "RecipientBody",
+        "type": "object"
+      },
+      "ReconciliationBody": {
+        "additionalProperties": false,
+        "properties": {
+          "countedCashPoisha": {
+            "minimum": 0.0,
+            "title": "Countedcashpoisha",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 140,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "countedCashPoisha",
+          "reason"
+        ],
+        "title": "ReconciliationBody",
         "type": "object"
       },
       "RegisterBody": {
@@ -364,6 +760,242 @@
           "maskedPhone"
         ],
         "title": "SafeIdentity",
+        "type": "object"
+      },
+      "ScheduledRecipient": {
+        "properties": {
+          "maskedPhone": {
+            "title": "Maskedphone",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "maskedPhone"
+        ],
+        "title": "ScheduledRecipient",
+        "type": "object"
+      },
+      "ScheduledTransferList": {
+        "properties": {
+          "scheduledTransfers": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduledTransferResource"
+            },
+            "title": "Scheduledtransfers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "scheduledTransfers"
+        ],
+        "title": "ScheduledTransferList",
+        "type": "object"
+      },
+      "ScheduledTransferResource": {
+        "properties": {
+          "amountPoisha": {
+            "title": "Amountpoisha",
+            "type": "integer"
+          },
+          "authorizedAt": {
+            "format": "date-time",
+            "title": "Authorizedat",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "executeAt": {
+            "format": "date-time",
+            "title": "Executeat",
+            "type": "string"
+          },
+          "failureCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failurecode"
+          },
+          "failureMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failuremessage"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/ScheduledRecipient"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "scheduledTransferId": {
+            "title": "Scheduledtransferid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "SCHEDULED",
+              "EXECUTED",
+              "FAILED",
+              "CANCELLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "transferReference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transferreference"
+          }
+        },
+        "required": [
+          "scheduledTransferId",
+          "reference",
+          "status",
+          "amountPoisha",
+          "note",
+          "executeAt",
+          "recipient",
+          "transferReference",
+          "failureCode",
+          "failureMessage",
+          "authorizedAt",
+          "resolvedAt",
+          "createdAt"
+        ],
+        "title": "ScheduledTransferResource",
+        "type": "object"
+      },
+      "SettleBody": {
+        "additionalProperties": false,
+        "properties": {
+          "pin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin"
+          },
+          "planVersion": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Planversion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "planVersion"
+        ],
+        "title": "SettleBody",
+        "type": "object"
+      },
+      "SmartWalletResource": {
+        "properties": {
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/CashEventResource"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
+          "connectionStatus": {
+            "enum": [
+              "CONNECTED",
+              "DISCONNECTED"
+            ],
+            "title": "Connectionstatus",
+            "type": "string"
+          },
+          "expectedCashPoisha": {
+            "title": "Expectedcashpoisha",
+            "type": "integer"
+          },
+          "inventoryDifferencePoisha": {
+            "title": "Inventorydifferencepoisha",
+            "type": "integer"
+          },
+          "lastSequence": {
+            "title": "Lastsequence",
+            "type": "integer"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastsyncedat"
+          },
+          "walletId": {
+            "title": "Walletid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "walletId",
+          "connectionStatus",
+          "expectedCashPoisha",
+          "lastSequence",
+          "lastSyncedAt",
+          "inventoryDifferencePoisha",
+          "activity"
+        ],
+        "title": "SmartWalletResource",
         "type": "object"
       },
       "TransferBody": {
@@ -644,6 +1276,400 @@
         "summary": "Register",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/expense-groups": {
+      "get": {
+        "operationId": "list_groups_api_v1_expense_groups_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Groups",
+        "tags": [
+          "expense-groups"
+        ]
+      },
+      "post": {
+        "operationId": "create_group_api_v1_expense_groups_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGroupBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Group",
+        "tags": [
+          "expense-groups"
+        ]
+      }
+    },
+    "/api/v1/expense-groups/{group_id}": {
+      "get": {
+        "operationId": "get_group_api_v1_expense_groups__group_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Group",
+        "tags": [
+          "expense-groups"
+        ]
+      }
+    },
+    "/api/v1/expense-groups/{group_id}/expenses": {
+      "post": {
+        "operationId": "create_expense_api_v1_expense_groups__group_id__expenses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateExpenseBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Expense",
+        "tags": [
+          "expense-groups"
+        ]
+      }
+    },
+    "/api/v1/expense-groups/{group_id}/settle": {
+      "post": {
+        "operationId": "settle_group_api_v1_expense_groups__group_id__settle_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Settle Group",
+        "tags": [
+          "expense-groups"
+        ]
+      }
+    },
+    "/api/v1/expense-groups/{group_id}/settlement-plan": {
+      "get": {
+        "operationId": "get_settlement_plan_api_v1_expense_groups__group_id__settlement_plan_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Settlement Plan",
+        "tags": [
+          "expense-groups"
         ]
       }
     },
@@ -1136,6 +2162,686 @@
         ]
       }
     },
+    "/api/v1/notifications": {
+      "get": {
+        "operationId": "list_notifications_api_v1_notifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unreadOnly",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unreadonly",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Notifications",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/read-all": {
+      "post": {
+        "operationId": "read_all_api_v1_notifications_read_all_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read All",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/{notification_id}/read": {
+      "post": {
+        "operationId": "read_one_api_v1_notifications__notification_id__read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notification_id",
+            "required": true,
+            "schema": {
+              "title": "Notification Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read One",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/scheduled-transfers": {
+      "get": {
+        "operationId": "list_scheduled_transfers_api_v1_scheduled_transfers_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTransferList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Scheduled Transfers",
+        "tags": [
+          "scheduled-transfers"
+        ]
+      },
+      "post": {
+        "operationId": "create_scheduled_transfer_api_v1_scheduled_transfers_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateScheduledTransferBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTransferResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Scheduled Transfer",
+        "tags": [
+          "scheduled-transfers"
+        ]
+      }
+    },
+    "/api/v1/scheduled-transfers/{schedule_id}": {
+      "get": {
+        "operationId": "get_scheduled_transfer_api_v1_scheduled_transfers__schedule_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTransferResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Scheduled Transfer",
+        "tags": [
+          "scheduled-transfers"
+        ]
+      }
+    },
+    "/api/v1/scheduled-transfers/{schedule_id}/cancel": {
+      "post": {
+        "operationId": "cancel_scheduled_transfer_api_v1_scheduled_transfers__schedule_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTransferResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Scheduled Transfer",
+        "tags": [
+          "scheduled-transfers"
+        ]
+      }
+    },
+    "/api/v1/smart-wallet": {
+      "get": {
+        "operationId": "get_smart_wallet_api_v1_smart_wallet_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartWalletResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Smart Wallet",
+        "tags": [
+          "smart-wallet"
+        ]
+      }
+    },
+    "/api/v1/smart-wallet/connection": {
+      "post": {
+        "operationId": "set_connection_api_v1_smart_wallet_connection_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartWalletResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Connection",
+        "tags": [
+          "smart-wallet"
+        ]
+      }
+    },
+    "/api/v1/smart-wallet/events": {
+      "post": {
+        "operationId": "record_cash_event_api_v1_smart_wallet_events_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CashObservationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashMutationResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Cash Event",
+        "tags": [
+          "smart-wallet"
+        ]
+      }
+    },
+    "/api/v1/smart-wallet/reconciliations": {
+      "post": {
+        "operationId": "reconcile_cash_api_v1_smart_wallet_reconciliations_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconciliationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashMutationResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reconcile Cash",
+        "tags": [
+          "smart-wallet"
+        ]
+      }
+    },
     "/api/v1/system-info": {
       "get": {
         "operationId": "system_info_api_v1_system_info_get",
@@ -1357,6 +3063,78 @@
           }
         },
         "summary": "Get Transfer",
+        "tags": [
+          "transfers"
+        ]
+      }
+    },
+    "/api/v1/transfers/{reference}/reversal-request": {
+      "post": {
+        "operationId": "request_reversal_api_v1_transfers__reference__reversal_request_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference",
+            "required": true,
+            "schema": {
+              "title": "Reference",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Reversal",
         "tags": [
           "transfers"
         ]

@@ -45,7 +45,7 @@ All authoritative amounts are integers in **poisha**. One taka is 100 poisha, so
 
 ## Project status
 
-**Current state as of 29 August 2026:** the backend financial core, local multi-replica stack, and k6 reliability scenarios are implemented. The customer-facing Next.js PWA is specified but not yet present in `web/`. Azure resources have been prepared, while the final application deployment and TLS verification remain operational follow-up work.
+**Current state as of 29 August 2026:** the backend financial core, responsive Next.js PWA, Smart Wallet cash-inventory interface, shared-expense settlement, local multi-replica stack, scheduler worker, and k6 reliability scenarios are implemented. Azure resources and Caddy configuration are prepared; the final remote deployment, Vercel environment, and real-phone verification remain operational follow-up work.
 
 | Area | Status | Notes |
 |---|---|---|
@@ -58,10 +58,13 @@ All authoritative amounts are integers in **poisha**. One taka is 100 poisha, so
 | Integrity report | Implemented | Five live, uncached financial assertions |
 | Three API replicas and nginx gateway | Implemented | Local Docker Compose topology |
 | k6 reliability laboratory | Verified | Six scenarios pass against a clean three-replica stack |
-| Next.js PWA and integrity dashboard UI | Specified | Screen and component contracts are in `docs/frontend-screens.md` |
+| Next.js PWA and integrity dashboard UI | Implemented | 21 routes; typed API seam, responsive consumer shell, and live judge dashboard |
 | Money Requests | Implemented | Create, list, inspect, pay, decline, cancel, expiry, and concurrent-payment safety |
-| Consent-based Reversals | Deferred | Frontend action must remain hidden for this release |
-| Notifications and scheduled Transfers | Planned | Must route financial effects through the existing Transfer engine |
+| Consent-based Reversals | Implemented | Approval creates a compensating Transfer; original Journal Entries remain immutable |
+| Notifications | Implemented | Same-transaction writes, private unread state, and 10-second frontend polling |
+| Scheduled Transfers | Implemented | PIN-authorized intentions claimed once and executed by the normal Transfer engine |
+| Smart Wallet | Implemented | Separate append-only physical-cash inventory with explicit reconciliation |
+| Smart Group Settlement | Implemented | Immutable expenses, explainable net positions, and per-payer consent |
 | Production HTTPS deployment | Prepared | Compose, Caddy, and Azure instructions exist; final verification is pending |
 
 Do not describe planned features as shipped. The implementation tracker in [tasks/todo.md](tasks/todo.md) is the detailed source for current scope.

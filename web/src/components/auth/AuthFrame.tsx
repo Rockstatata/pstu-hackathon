@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Bird, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
-import { FixtureNotice } from "@/components/ui/FixtureNotice";
 
 export function AuthFrame({ children }: { children: ReactNode }) {
   return (
@@ -25,7 +24,7 @@ export function AuthFrame({ children }: { children: ReactNode }) {
             <ThemeToggle />
           </div>
         </div>
-        <FixtureNotice />
+        
         <section className="card p-5 sm:p-7">{children}</section>
       </div>
     </main>

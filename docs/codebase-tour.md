@@ -13,6 +13,10 @@ A completed Transfer is permanent. Its Journal Entries are signed integers: the 
 negative entry and recipients have positive entries whose sum exactly cancels it. A Money Request
 is different: it is only an intention until its payer accepts it.
 
+Physical cash belongs to a separate Smart Wallet inventory journal. Shared Expenses produce
+non-financial settlement plans whose approved payments still use the Transfer engine. A Scheduled
+Transfer is likewise an intention until the worker claims it and completes a normal Transfer.
+
 ## Repository Map
 
 | Path | What belongs there |
@@ -21,11 +25,16 @@ is different: it is only an intention until its payer accepts it.
 | `backend/app/services/transfer.py` | The one orchestration path for User money movement |
 | `backend/app/services/ledger.py` | Account locks, Transfers, Journal Entries, cached balances |
 | `backend/app/services/money_requests.py` | Request lifecycle; delegates payment to Transfer |
+| `backend/app/services/smart_wallet.py` | Physical cash observations and explicit reconciliation |
+| `backend/app/services/group_settlement.py` | Shared Expense positions and consent-preserving plans |
+| `backend/app/services/scheduled_transfers.py` | Future intentions and one-row worker claims |
+| `backend/app/workers/scheduler.py` | Private worker loop for due Scheduled Transfers |
 | `backend/app/schema.sql` | Authoritative, re-runnable PostgreSQL schema |
 | `backend/tests/` | Service/regression tests against real PostgreSQL |
 | `tests/blackbox/` | Public-contract acceptance test through nginx and three replicas |
 | `tests/k6/` | Concurrency, load, crash, and payment-storm proofs |
 | `docs/openapi.json` | Deterministic frontend contract snapshot |
+| `web/` | Responsive Next.js PWA; `lib/api.ts` is its only wire-contract seam |
 | `infra/` | nginx, Caddy, and Azure deployment configuration |
 
 ## How a Transfer Moves

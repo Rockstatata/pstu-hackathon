@@ -13,6 +13,8 @@ interface Props {
   balanceMinor: number | null;
   error?: string | null;
   disabled?: boolean;
+  label?: string;
+  availableLabel?: string;
 }
 
 /**
@@ -20,14 +22,23 @@ interface Props {
  * re-checks it inside the row lock, and its answer is the one that counts
  * (ADR-0001). This input never decides whether a transfer is allowed.
  */
-export function AmountInput({ value, onChange, minor, balanceMinor, error, disabled }: Props) {
+export function AmountInput({
+  value,
+  onChange,
+  minor,
+  balanceMinor,
+  error,
+  disabled,
+  label = "Amount",
+  availableLabel = "available",
+}: Props) {
   const id = useId();
   const errorId = `${id}-error`;
 
   return (
     <div className="flex flex-col gap-2">
       <label htmlFor={id} className="text-[13px] font-medium text-text-secondary">
-        Amount
+        {label}
       </label>
 
       <div
@@ -64,7 +75,7 @@ export function AmountInput({ value, onChange, minor, balanceMinor, error, disab
       ) : (
         balanceMinor !== null && (
           <p className="text-[13px] text-text-secondary">
-            <span className="tnum">{formatTaka(balanceMinor)}</span> available
+            <span className="tnum">{formatTaka(balanceMinor)}</span> {availableLabel}
           </p>
         )
       )}

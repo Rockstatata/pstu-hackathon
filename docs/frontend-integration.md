@@ -15,10 +15,16 @@ and retry meaning. The local base URL is `http://localhost:8080/api/v1`.
 | Request inbox / outbox | `GET /money-requests?direction=incoming|outgoing` |
 | Create / inspect request | `POST /money-requests`, `GET /money-requests/{id}` |
 | Pay / decline / cancel | `POST .../pay`, `POST .../decline`, `POST .../cancel` |
+| Request a consent Reversal | `POST /transfers/{reference}/reversal-request` |
+| Notifications | `GET /notifications`, `POST .../read`, `POST /notifications/read-all` |
+| Scheduled Transfer intentions | `GET/POST /scheduled-transfers`, `POST .../cancel` |
+| Smart Wallet | `GET /smart-wallet`, connection, event, and reconciliation endpoints |
+| Shared expenses | `/expense-groups`, expense, settlement-plan, and settle endpoints |
 | Integrity / replica status | `GET /integrity`, `GET /system-info` |
 
-Notifications, scheduled Transfers, and consent-based Reversals are outside this release. Hide
-those controls. Transfer detail always returns `reversible: false` with a release explanation.
+Transfer detail returns `reversible` plus a specific reason when an item cannot be reversed. Only
+the original sender of a completed one-to-one Transfer may request a Reversal. Notifications and
+Scheduled Transfers are shipped surfaces and must stay behind the typed `lib/api.ts` seam.
 
 ## Tokens, Amounts, and CORS
 
@@ -61,6 +67,17 @@ const response = await fetch(`${api}/transfers`, {
 Render `EXPIRED` from the server like a terminal state. Only show Pay/Decline for incoming pending
 requests and Cancel for outgoing pending requests. Payment returns a normal Transfer receipt plus
 `moneyRequestId` and `moneyRequestReference`; navigate to the receipt with that response.
+
+A Reversal request is a Money Request with `requestKind: "REVERSAL"` and an
+`originalTransferReference`. Paying it uses the same idempotent payment endpoint and returns a
+normal receipt whose kind is `REVERSAL`.
+
+## Scheduled Transfer UI Rules
+
+Creation always requires a Step-Up PIN and must retry with the same body and Idempotency-Key. The
+PIN is verified and discarded. `SCHEDULED` means an instruction exists; it does not reserve money
+or create a pending Transfer. Balance and policy are checked again at `executeAt`. Render `FAILED`
+with `failureMessage`, and link `EXECUTED` rows to `transferReference`.
 
 ## Errors
 

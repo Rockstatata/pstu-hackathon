@@ -9,11 +9,11 @@
 - [x] Export deterministic OpenAPI and make drift a test failure.
 - [x] Run unit, black-box, three-replica, k6, and final Ledger-integrity gates.
 - [x] Publish the codebase tour, architecture, frontend integration, and reliability guides.
-- [ ] Merge the frontend branch only after the backend contract is green.
+- [x] Merge the frontend branch only after the backend contract is green.
 
-Release boundary: notifications, consent Reversals, and scheduled Transfers remain
-deferred. Their frontend controls must stay hidden. Transaction detail must explain
-that Reversals are unavailable in this release.
+Release boundary update: notifications, consent Reversals, Scheduled Transfers, Smart Wallet, and
+Smart Group Settlement are now shipped against real endpoints. The remaining Phase 0.5 items are
+external deployment verification, not hidden product controls.
 
 **Deadline 15:00.** Plan written 10:35. Design locked via `/grill-with-docs`; see `CONTEXT.md` and `docs/adr/`.
 
@@ -124,9 +124,9 @@ Redeploy from here on is `git pull && docker compose up -d --build` (~2m) plus V
 
 ## Phase 9 — Reversal (15m, requires Phase 7)
 
-- [ ] `Request Reversal` raises a money request linked to the original transfer
-- [ ] Block reversal-of-reversal and group legs, with a stated reason (ADR-0005)
-- [ ] Wire into Screen E2
+- [x] `Request Reversal` raises a money request linked to the original transfer
+- [x] Block reversal-of-reversal and group legs, with a stated reason (ADR-0005)
+- [x] Wire into Screen E2
 
 ## Phase 10 — Risk-based step-up (30m)
 
@@ -136,16 +136,16 @@ Redeploy from here on is `git pull && docker compose up -d --build` (~2m) plus V
 
 ## Phase 11 — Notifications (20m)
 
-- [ ] `notifications` written **in the same transaction** as the journal entries
-- [ ] Poll every 10s; no WebSockets, no Web Push
-- [ ] Screen H1
+- [x] `notifications` written **in the same transaction** as the journal entries
+- [x] Poll every 10s; no WebSockets, no Web Push
+- [x] Screen H1
 
 ## Phase 12 — Scheduled transfers (50m) — *added at user request over a Tier-2 recommendation*
 
-- [ ] `scheduled_transfers` table with its own lifecycle (a pending *intention*, never a pending Transfer)
-- [ ] Worker container executing due transfers through the same idempotent engine
-- [ ] Failure recorded with a reason; no silent retry storms
-- [ ] Screens G1, G2
+- [x] `scheduled_transfers` table with its own lifecycle (a pending *intention*, never a pending Transfer)
+- [x] Worker container executing due transfers through the same idempotent engine
+- [x] Failure recorded with a reason; no silent retry storms
+- [x] Screens G1, G2
 
 ## Phase 13 — Polish (whatever remains)
 
@@ -275,3 +275,119 @@ Admin/Judge dashboard consumes, so it can later be replaced without a UI rewrite
 Verification: `cmd /c "npm run lint && npm run build"` in `web/` passes; the production build emits
 18 routes, including `/admin` and `/wallet`, with no `/integrity` route.
 
+
+---
+
+## Backend–frontend integration repair (post-merge)
+
+The merge of `97425bd` into `main` is textually clean, but the two halves were built against
+different contracts. `web/src/lib/api.ts` targets the speculative contract in `docs/solution-prd`
+§26–27; the shipped backend is `docs/openapi.json`. Almost every path, field name, and required
+header differs, so the frontend currently cannot complete a single call against the running stack.
+
+Approach: put the wire↔view translation in **one seam** (`lib/api.ts` + `lib/types.ts`). Component
+view models keep their present shape, so the ~35 UI files stay untouched. Financial truth still
+comes only from a response body.
+
+- [x] 1. Retarget `lib/types.ts` to the shipped contract and split wire types from view models.
+- [x] 2. Rewrite `lib/api.ts` against `docs/openapi.json`: real paths, real bodies, camelCase
+      poisha fields, `Idempotency-Key` on every money-moving POST, and mapping into view models.
+- [x] 3. Replace `RecipientPreview.userId` (the backend never returns a user id) with `phone`
+      everywhere it is used as a key: send, group send, request create, request detail, sheet.
+- [x] 4. Handle `403 STEP_UP_REQUIRED`: wire the orphaned `StepUpDialog` into the send flow and
+      request payment, resubmitting the same body and the same key with `pin`.
+- [x] 5. Wire `/admin` to the live `GET /integrity` and `GET /system-info`; delete `lib/admin-demo.ts`.
+      A judge-facing dashboard must not render invented numbers.
+- [x] 6. Delete `lib/fixtures.ts` and `FixtureNotice` — a client-side ledger contradicts the
+      architectural rule and now mirrors a dead contract.
+- [x] 7. Enforce the release boundary in the UI: remove the `/notifications` and `/scheduled`
+      routes (no server endpoint exists) and keep them out of navigation.
+- [x] 8. Replace the hard-coded recent-recipient list with `GET /users/recent-recipients`.
+- [x] 9. Add `web/Dockerfile` and correct the compose env var to `NEXT_PUBLIC_API_URL`.
+- [x] 10. `npm install`, `npm run lint`, `npm run build` — all green.
+- [x] 11. End-to-end proof against the running three-replica stack: register → balance → lookup →
+      transfer → receipt → history → step-up → money request → pay → integrity.
+- [x] 12. Refresh `web/HANDOFF.md` (currently stale) and record the review below.
+
+### Review — integration repair
+
+The merge itself was clean; the integration was not. The frontend called eleven endpoints that do
+not exist and sent field names the API rejects, so no screen could have completed a call. That is
+now closed at one seam: `lib/types.ts` separates wire types from view models and `lib/api.ts` is the
+only module that names a backend field. The ~35 component files were left alone apart from the five
+places that keyed a recipient by a `userId` the backend never issues.
+
+Three findings worth carrying forward:
+
+1. **Step-up fires on the first send to any new recipient**, not only over ৳25,000. `StepUpDialog`
+   existed but was wired to nothing, so the first demo send would have failed. It is now wired into
+   `/send`, `/send/group`, and money-request payment, resubmitting the same body and the same
+   Idempotency-Key with the PIN.
+2. **`/admin` rendered invented numbers** from `lib/admin-demo.ts` on the judge-facing screen. It now
+   reads `GET /integrity` and `GET /system-info` live every 5s, shows all five assertions, the
+   issued-versus-held totals, the audit counters, per-replica heartbeats, and the enforced policy
+   limits — and shows an explicit "no verdict available" state rather than a fallback figure.
+3. **`lib/fixtures.ts` was a client-side ledger.** Deleted, with `FixtureNotice`, `admin-demo.ts`,
+   `NotificationBell`, and the `/notifications` and `/scheduled` routes, whose endpoints do not
+   exist in this release.
+
+Also: real recent recipients replace a hard-coded list, money requests are queried by direction
+instead of filtered client-side, `web/Dockerfile` now exists so the compose `web` profile runs, and
+the compose env var was corrected to the `NEXT_PUBLIC_API_URL` the client actually reads.
+
+Verification: `npx next build` and `npx eslint src` clean; 16 routes emitted. Fourteen live checks
+against the running three-replica stack — registration and issuance, balance, lookup, step-up
+demanded then satisfied on the same key, idempotent replay returning the original receipt, signed
+ledger legs, `reversible: false`, the `recipients[]` group form, money-request create/list/pay, the
+second payment rejected as `MONEY_REQUEST_NOT_PENDING`, recent recipients, integrity `HEALTHY` with
+zero difference, and 3/3 replicas.
+
+Not done: no browser click-through, so the wiring is proven at the contract level rather than by
+driving the UI; and Phase 0.5 (Caddy TLS, Vercel, phone check) is still open.
+
+---
+
+## Smart extensions and release completion (Codex owner)
+
+Coordination boundary: the concurrent frontend-integration session owns all currently modified
+`web/` files listed by `git status`. This work starts in new backend modules, tests, domain docs,
+and new frontend routes; shared frontend seams are integrated only after that session's build is
+stable and its diff has been re-read.
+
+- [x] 1. Reconcile the concurrent integration diff, run its lint/build/tests, and record remaining
+      contract gaps without overwriting active work.
+- [x] 2. Define Smart Wallet terms and record the architectural boundary between the conserved
+      digital Ledger and the append-only Cash Inventory Journal.
+- [x] 3. Implement the authenticated Smart Wallet API: expected cash, connection simulation,
+      idempotent cash observations, immutable history, and explicit Cash Count Reconciliation.
+- [x] 4. Add PostgreSQL-backed regression tests proving ownership isolation, idempotency,
+      concurrent-event safety, append-only history, reconciliation, and unchanged Ledger integrity.
+- [x] 5. Add the responsive Smart Wallet screen in the existing Chorui design system, with
+      simulator controls, connection/last-sync state, activity, and reconciliation flow.
+- [x] 6. Implement Smart Group Settlement as Group accounting plus an explainable settlement plan;
+      preserve per-payer consent and route each approved outgoing movement through the Transfer engine.
+- [x] 7. Finish the remaining authorized product work: Reversals, notifications, scheduled Transfer
+      intentions, their screens, and release-boundary documentation.
+- [x] 8. Run backend regressions, frontend lint/build, Compose integration, k6 invariants, and the
+      final `/api/v1/integrity` gate; update contracts, handoff, and this review.
+
+### Review — smart extensions and release completion
+
+Implemented the Smart Wallet as a separate append-only Cash Inventory Journal, with connection
+simulation, idempotent Cash Events, and explicit Cash Count Reconciliation. Implemented immutable
+Expense Groups and explainable Net Positions; each member approves only their own outgoing Group
+Settlement through the existing Transfer engine.
+
+Finished the previously deferred consent Reversal, Notification, and Scheduled Transfer lifecycles.
+Scheduled instructions require PIN authorization without storing the PIN, are claimed with
+`FOR UPDATE SKIP LOCKED`, and commit their resulting Transfer/status/notifications atomically.
+
+Verification: 33 backend tests and the expanded black-box gate pass on a clean PostgreSQL stack;
+frontend lint and production build pass with 21 routes. Duplicate, overspend, deadlock-pressure,
+sustained-load, replica-kill, and Money Request payment storms pass. The final Ledger is `HEALTHY`
+with zero difference. A pressure-only nginx timeout was reproduced, minimized, fixed at the gateway
+boundary, and rerun at both 48-VU/10-second and default 24-VU/45-second settings.
+
+External follow-up remains Phase 0.5 only: deploy the current commit to Azure/Vercel, verify public
+TLS/CORS end to end, and perform the real-phone click-through. Those actions require deployment
+credentials and a physical device and were not claimed as locally completed.

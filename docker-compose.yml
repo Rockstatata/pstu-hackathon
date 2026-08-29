@@ -49,11 +49,28 @@ services:
     ports:
       - "8080:80"
 
+  scheduler:
+    build: ./backend
+    command: ["python", "-m", "app.workers.scheduler"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://money:money@db:5432/money
+      JWT_SECRET: dev-secret-not-for-production
+      LOCK_TIMEOUT_MS: "3000"
+      APP_ENVIRONMENT: development
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    restart: unless-stopped
+
   web:
     build: ./web
     profiles: ["web"]
     environment:
-      NEXT_PUBLIC_API_BASE: http://localhost:8080/api/v1
+      # Read by web/src/lib/api.ts. The browser resolves this, not the container,
+      # so it is the host-published gateway port rather than the compose service.
+      NEXT_PUBLIC_API_URL: http://localhost:8080/api/v1
     depends_on:
       - gateway
     ports:

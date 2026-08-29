@@ -195,6 +195,7 @@
     color: var(--text);
     font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
   }
 
   /* Visible focus on everything focusable. Never outline-none without a replacement. */
@@ -209,6 +210,17 @@
   h3 {
     color: var(--text);
     text-wrap: balance;
+  }
+}
+
+/* Financial UI is frequently used at arm's length. Small helper copy may be
+   compact on desktop, but never drops below the mobile readability floor. */
+@media (max-width: 767px) {
+  .text-\[10px\],
+  .text-\[11px\],
+  .text-\[12px\],
+  .text-\[13px\] {
+    font-size: 0.875rem;
   }
 }
 

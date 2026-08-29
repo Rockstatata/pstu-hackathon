@@ -1,4 +1,4 @@
-import { CreditCard, HandCoins, History, Home, Send, type LucideIcon } from "lucide-react";
+import { CalendarClock, CreditCard, HandCoins, History, Home, Send, Users, WalletCards, type LucideIcon } from "lucide-react";
 
 /**
  * Navigation and quick actions are rendered FROM THIS ARRAY, never hard-coded
@@ -26,10 +26,13 @@ export const TABS: NavEntry[] = [
   { href: "/history", label: "History", icon: History, shipped: true, phase: "Phase 4" },
   { href: "/requests", label: "Requests", icon: HandCoins, shipped: true, phase: "Phase 7" },
   { href: "/wallet", label: "Card", icon: CreditCard, shipped: true, phase: "User account" },
+  { href: "/smart-wallet", label: "Cash", icon: WalletCards, shipped: true, phase: "Smart Wallet" },
 ];
 
 export const QUICK_ACTIONS: NavEntry[] = [
   { href: "/send", label: "Send", icon: Send, shipped: true, phase: "Phase 3" },
+  { href: "/groups", label: "Split & settle", icon: Users, shipped: true, phase: "Smart Group Settlement" },
+  { href: "/scheduled", label: "Schedule", icon: CalendarClock, shipped: true, phase: "Phase 12" },
 ];
 
 export const shippedTabs = () => TABS.filter((t) => t.shipped);

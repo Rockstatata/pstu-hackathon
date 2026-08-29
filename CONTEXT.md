@@ -84,3 +84,66 @@ _Avoid_: 2FA, Re-auth, Verification
 
 **Receipt**:
 The durable, shareable record of a Transfer as presented to a User, identified by its Transfer ID.
+
+### Physical cash
+
+**Smart Wallet**:
+A physical cash container associated with one User. It reports observations about banknotes but does
+not hold or create digital money.
+_Avoid_: Account, Digital Wallet
+
+**Expected Cash**:
+The physical cash amount implied by the Smart Wallet's Cash Events. It is an inventory expectation,
+not an Account Balance and not part of the digital Ledger.
+_Avoid_: Balance, Available Balance
+
+**Cash Event**:
+An immutable observation that physical cash entered or left a Smart Wallet, or that a counted amount
+was explicitly reconciled. Cash Events form the Cash Inventory Journal.
+_Avoid_: Transfer, Journal Entry, Transaction
+
+**Cash Count Reconciliation**:
+An explicit Cash Event recording Expected Cash, Counted Cash, and their discrepancy. It changes the
+current expectation without rewriting earlier Cash Events.
+_Avoid_: Integrity Check, Silent adjustment
+
+### Shared expenses
+
+**Expense Group**:
+A named set of Users who record shared Expenses and settle the resulting obligations with one another.
+_Avoid_: Group Transfer, Chat group
+
+**Expense**:
+An immutable statement that one User paid an amount on behalf of members of an Expense Group.
+_Avoid_: Transfer, Payment
+
+**Expense Share**:
+The portion of an Expense assigned to one member. All Shares of an Expense sum exactly to its amount.
+_Avoid_: Journal Entry, Recipient
+
+**Net Position**:
+What one member should receive or pay after all Expense Shares and completed Group Settlements are
+combined. Positive receives; negative pays.
+_Avoid_: Account Balance, Debt balance
+
+**Settlement Plan**:
+An explainable, non-financial proposal that converts all current Net Positions into practical
+member-to-member payments. A plan never moves money by itself.
+_Avoid_: Group Transfer, Transfer
+
+**Group Settlement**:
+One member's approved outgoing Transfer satisfying their current part of a Settlement Plan. Different
+payers approve and complete their own Group Settlements independently.
+_Avoid_: Settle All, Atomic multi-payer Transfer
+
+### Future instructions
+
+**Scheduled Transfer**:
+A PIN-authorized instruction to attempt one Transfer at a future time. It is an intention, not money
+and not a pending Journal Entry.
+_Avoid_: Pending Transfer, Reserved money
+
+**Execution Time**:
+The earliest instant at which a Scheduled Transfer may be claimed. Balance, recipient, policy, and
+risk are evaluated again at execution.
+_Avoid_: Guaranteed delivery time

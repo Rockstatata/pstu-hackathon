@@ -4,7 +4,6 @@ import { Filter, ReceiptText } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { TransactionList } from "@/components/tx/TransactionList";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { FixtureNotice } from "@/components/ui/FixtureNotice";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { TransactionListSkeleton } from "@/components/ui/Skeleton";
 import { ApiError, api } from "@/lib/api";
@@ -53,7 +52,7 @@ export default function HistoryPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <FixtureNotice />
+      
       {offline && <OfflineBanner />}
       <header className="mb-5"><p className="text-[13px] font-medium text-text-secondary">Your account activity</p><h1 className="mt-1 text-[24px] font-semibold leading-8">Transaction history</h1></header>
       <div className="mb-5 flex items-center gap-2 overflow-x-auto pb-1" aria-label="Transaction filters">
@@ -61,9 +60,9 @@ export default function HistoryPage() {
         {FILTERS.map(({ key, label }) => <button type="button" key={key} onClick={() => setFilter(key)} aria-pressed={filter === key} className={`min-h-11 shrink-0 rounded-full px-4 text-[13px] font-semibold transition-colors ${filter === key ? "bg-purple-soft text-primary-text" : "text-text-secondary hover:bg-surface-subtle"}`}>{label}</button>)}
       </div>
       {error && <p role="alert" className="mb-5 rounded-md bg-danger-surface px-3 py-2.5 text-[13px] font-medium text-danger-text">{error}</p>}
-      <section className="card p-3 sm:p-4">
+      <section className="card overflow-hidden">
         {transfers === null ? <TransactionListSkeleton /> : visible.length ? <TransactionList transfers={visible} /> : <EmptyState icon={ReceiptText} title="Nothing matches this filter" detail={filter === "ALL" ? "Your completed transfers will appear here." : "Try another filter to see more activity."} />}
-        {cachedAt && <p className="border-t border-divider px-2 pt-3 text-[12px] text-text-muted">Cached copy · last updated {new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(new Date(cachedAt))}</p>}
+        {cachedAt && <p className="border-t border-divider px-5 py-3 text-[12px] text-text-muted">Cached copy · last updated {new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(new Date(cachedAt))}</p>}
       </section>
     </div>
   );

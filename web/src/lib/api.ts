@@ -4,19 +4,45 @@ import type {
   AuthResponse,
   CreateGroupTransferRequest,
   CreateMoneyRequestRequest,
-  CreateScheduledTransferRequest,
   CreateTransferRequest,
+  CashEvent,
+  CashMutation,
+  ExpenseGroup,
+  ExpenseGroupMember,
+  ExpenseGroupSummary,
   IntegrityReport,
   MoneyRequest,
   MoneyRequestListResponse,
-  NotificationListResponse,
+  Notification,
+  NotificationList,
   RecipientPreview,
   SystemInfo,
+  SmartWallet,
+  SettlementPlan,
   ScheduledTransfer,
   Transfer,
   TransferListResponse,
+  TransferReceipt,
+  TransferStatus,
+  WireAccount,
+  WireAuthResponse,
+  WireIdentity,
+  WireMoneyRequest,
+  WireNotification,
+  WireNotificationList,
+  WireReceipt,
+  WireRecentRecipients,
+  WireTransaction,
+  WireCashEvent,
+  WireCashMutation,
+  WireSmartWallet,
+  WireExpenseGroup,
+  WireExpenseGroupMember,
+  WireExpenseGroupSummary,
+  WireSettlementPlan,
+  WireScheduledTransfer,
+  WireUser,
 } from "./types";
-import { fixture, FIXTURES_ON } from "./fixtures";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
 const TOKEN_KEY = "chorui.token";
@@ -27,45 +53,77 @@ const TOKEN_KEY = "chorui.token";
 
 /**
  * Errors are sentences, not codes (docs/frontend-screens.md rule 4). The server
- * already sends a human message; this map exists so the UI still reads like a
- * sentence if a backend message is terse, and so an unreachable API is not
- * reported to a user as "TypeError: Failed to fetch".
+ * message stays authoritative; this map is the fallback for the two cases the
+ * server cannot cover — a request that never reached it, and a terse code we
+ * would otherwise print raw.
  */
 const SENTENCES: Record<string, string> = {
   INVALID_AMOUNT: "Enter an amount greater than zero.",
   INSUFFICIENT_FUNDS: "You do not have enough balance for this transfer.",
   RECIPIENT_NOT_FOUND: "No account is registered to that number.",
   SELF_TRANSFER_NOT_ALLOWED: "You cannot send money to your own account.",
-  TRANSFER_LIMIT_EXCEEDED: "You can send up to ৳100,000 per transfer and ৳200,000 per day.",
-  REQUEST_NOT_FOUND: "That money request no longer exists.",
-  REQUEST_ALREADY_RESOLVED: "That request has already been answered.",
-  REQUEST_EXPIRED: "That money request has expired.",
-  SCHEDULED_TRANSFER_NOT_FOUND: "That scheduled transfer is no longer available.",
+  TRANSFER_LIMIT_EXCEEDED: "That amount is over the transfer limit.",
+  STEP_UP_REQUIRED: "This transfer needs your PIN before it can be sent.",
+  STEP_UP_FAILED: "That PIN is not correct. No money has moved.",
+  TRANSFER_NOT_FOUND: "No transaction found with that ID.",
+  MONEY_REQUEST_NOT_FOUND: "That money request no longer exists.",
+  MONEY_REQUEST_NOT_PENDING: "That request has already been answered.",
+  MONEY_REQUEST_EXPIRED: "That money request has expired.",
+  NOTIFICATION_NOT_FOUND: "That notification is no longer available.",
+  PHONE_ALREADY_REGISTERED: "That number already has an account. Sign in instead.",
+  TOO_MANY_ATTEMPTS: "Too many incorrect attempts. Wait a moment before trying again.",
+  RATE_LIMITED: "Too many requests. Wait a moment before trying again.",
+  REQUEST_IN_PROGRESS: "That request is still being processed. Check your history in a moment.",
   IDEMPOTENCY_KEY_REQUIRED: "Something went wrong on our side. Nothing was sent.",
-  IDEMPOTENCY_KEY_REUSED: "This transfer was already submitted. Check your history before retrying.",
+  IDEMPOTENCY_KEY_REUSED:
+    "This was already submitted with different details. Check your history before retrying.",
+  PAYLOAD_TOO_LARGE: "That request was too large to send.",
+  INVALID_REQUEST: "Check the details you entered and try again.",
   UNAUTHENTICATED: "Your session has expired. Sign in again.",
-  FORBIDDEN: "You do not have access to this.",
   FINANCIAL_CORE_UNAVAILABLE: "Transfers are briefly unavailable. No money has moved.",
   INTERNAL_ERROR: "Something went wrong on our side. No money has moved.",
   NETWORK: "We could not reach the server. Nothing was sent.",
+  SMART_WALLET_DISCONNECTED: "Connect the Smart Wallet before recording a sensor event.",
+  SMART_WALLET_UNAVAILABLE: "Your Smart Wallet could not be loaded.",
+  CASH_INVENTORY_INSUFFICIENT:
+    "Expected Cash is lower than that cash-out amount. Count and reconcile the wallet first.",
+  TRANSFER_NOT_REVERSIBLE: "This Transfer cannot be reversed.",
+  REVERSAL_ALREADY_REQUESTED: "A Reversal request already exists for this Transfer.",
+  EXPENSE_GROUP_NOT_FOUND: "That Expense Group no longer exists or is not available to you.",
+  INVALID_SCHEDULE_TIME: "Choose a future date and time.",
+  SCHEDULED_TRANSFER_NOT_FOUND: "That Scheduled Transfer is no longer available.",
+  SCHEDULED_TRANSFER_NOT_PENDING: "That Scheduled Transfer has already been resolved.",
+  GROUP_MEMBER_NOT_FOUND: "One or more group members could not be found.",
+  INVALID_EXPENSE_SPLIT: "Check that every Expense Share adds up to the full amount.",
+  SETTLEMENT_PLAN_CHANGED: "The group changed. Review the updated settlement before paying.",
+  NOTHING_TO_SETTLE: "You do not currently owe a settlement in this group.",
 };
 
 export class ApiError extends Error {
   readonly code: string;
   readonly traceId?: string;
   readonly status: number;
+  /** Set on 403 STEP_UP_REQUIRED: why the server wants another identity check. */
+  readonly stepUpReason?: string;
 
-  constructor(code: string, message: string, status: number, traceId?: string) {
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    traceId?: string,
+    stepUpReason?: string,
+  ) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.traceId = traceId;
     this.status = status;
+    this.stepUpReason = stepUpReason;
   }
 
   /** Always a full sentence. Never a raw code, never a stack trace. */
   get sentence(): string {
-    return SENTENCES[this.code] ?? this.message ?? SENTENCES.INTERNAL_ERROR;
+    return this.message || SENTENCES[this.code] || SENTENCES.INTERNAL_ERROR;
   }
 }
 
@@ -97,6 +155,7 @@ export const tokenStore = {
   clear() {
     try {
       window.localStorage.removeItem(TOKEN_KEY);
+      window.dispatchEvent(new Event("chorui:unauthenticated"));
     } catch {
       /* ignore */
     }
@@ -115,8 +174,6 @@ interface RequestOptions {
 }
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  if (FIXTURES_ON) return fixture<T>(path, opts.method ?? "GET", opts.body);
-
   const headers: Record<string, string> = { Accept: "application/json" };
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
 
@@ -137,8 +194,8 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     });
   } catch {
     // A failed fetch is ambiguous: the request may or may not have reached the
-    // server. We say "nothing was sent" only because the backend is idempotent,
-    // so the safe user action is to check history rather than blindly retry.
+    // server. The safe action is to check history rather than blindly retry,
+    // and the unchanged key makes a genuine retry harmless.
     throw new ApiError("NETWORK", SENTENCES.NETWORK, 0);
   }
 
@@ -149,75 +206,554 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   if (!res.ok) {
     const body = payload as ApiErrorBody | null;
     const code = body?.error?.code ?? "INTERNAL_ERROR";
-    const message = body?.error?.message ?? "Something went wrong.";
+    const message = body?.error?.message ?? SENTENCES.INTERNAL_ERROR;
     if (res.status === 401) tokenStore.clear();
-    throw new ApiError(code, message, res.status, body?.error?.traceId);
+    throw new ApiError(code, message, res.status, body?.error?.traceId, body?.error?.stepUpReason);
   }
 
   return payload as T;
 }
 
 /* -------------------------------------------------------------------------- */
-/* Endpoints                                                                   */
+/* Wire -> view mapping                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The only place backend field names appear. Poisha stays an integer through
+ * every one of these; `Minor` is a rename, never a conversion.
+ */
+
+function toUser(wire: WireUser) {
+  return { id: wire.id, fullName: wire.name, phone: wire.phone };
+}
+
+function toAuth(wire: WireAuthResponse): AuthResponse {
+  return {
+    token: wire.token,
+    user: toUser(wire.user),
+    grantMinor: wire.grant?.amountPoisha ?? null,
+  };
+}
+
+function toAccount(wire: WireAccount): AccountSummary {
+  return { accountId: wire.accountId, balanceMinor: wire.balancePoisha, asOf: wire.asOf };
+}
+
+function toTransfer(wire: WireTransaction): Transfer {
+  const primary = wire.counterparties[0];
+  const many = wire.counterparties.length > 1;
+
+  return {
+    reference: wire.reference,
+    kind: wire.kind,
+    status: (wire.status === "REVERSED" ? "REVERSED" : "COMPLETED") as TransferStatus,
+    direction: wire.direction === "sent" ? "OUT" : "IN",
+    // The sender's leg arrives negative. Direction already carries that fact,
+    // so the amount itself is the magnitude.
+    amountMinor: Math.abs(wire.amountPoisha),
+    counterpartyName: many
+      ? `${wire.counterparties.length} recipients`
+      : (primary?.name ?? "Chorui"),
+    counterpartyMaskedPhone: many ? "Group transfer" : (primary?.maskedPhone ?? ""),
+    counterparties: wire.counterparties.map((c) => ({
+      name: c.name,
+      maskedPhone: c.maskedPhone,
+      amountMinor: Math.abs(c.amountPoisha),
+    })),
+    note: wire.note,
+    createdAt: wire.createdAt,
+    riskReason: wire.riskReason,
+    reversible: wire.reversible ?? false,
+    notReversibleReason: wire.notReversibleReason ?? null,
+    originalTransferReference: wire.originalTransferReference ?? null,
+    reversalRequestId: wire.reversalRequestId ?? null,
+    reversalRequestStatus: wire.reversalRequestStatus ?? null,
+  };
+}
+
+function toReceipt(wire: WireReceipt): TransferReceipt {
+  return {
+    reference: wire.reference,
+    kind: wire.kind,
+    totalMinor: wire.totalPoisha,
+    note: wire.note,
+    riskReason: wire.riskReason,
+    senderBalanceAfterMinor: wire.senderBalanceAfterPoisha,
+    completedAt: wire.completedAt,
+    recipients: wire.recipients.map((r) => ({
+      name: r.name,
+      maskedPhone: r.maskedPhone,
+      amountMinor: r.amountPoisha,
+    })),
+  };
+}
+
+function toMoneyRequest(wire: WireMoneyRequest): MoneyRequest {
+  // `direction` is relative to the signed-in User: incoming means they are the
+  // payer, so the person to name on the card is the requester, and vice versa.
+  const counterparty: WireIdentity = wire.direction === "incoming" ? wire.requester : wire.payer;
+
+  return {
+    id: wire.requestId,
+    reference: wire.reference,
+    direction: wire.direction === "incoming" ? "INCOMING" : "OUTGOING",
+    status: wire.status,
+    counterpartyName: counterparty.name,
+    counterpartyMaskedPhone: counterparty.maskedPhone,
+    amountMinor: wire.amountPoisha,
+    reason: wire.reason,
+    createdAt: wire.createdAt,
+    expiresAt: wire.expiresAt,
+    transferReference: wire.transferReference,
+    requestKind: wire.requestKind,
+    originalTransferReference: wire.originalTransferReference,
+  };
+}
+
+function toCashEvent(wire: WireCashEvent): CashEvent {
+  return {
+    id: wire.eventId,
+    sequence: wire.sequenceNumber,
+    kind: wire.kind,
+    amountMinor: wire.amountPoisha,
+    expectedBeforeMinor: wire.expectedBeforePoisha,
+    expectedAfterMinor: wire.expectedAfterPoisha,
+    countedCashMinor: wire.countedCashPoisha,
+    source: wire.source,
+    reason: wire.reason,
+    observedAt: wire.observedAt,
+    recordedAt: wire.recordedAt,
+  };
+}
+
+function toSmartWallet(wire: WireSmartWallet): SmartWallet {
+  return {
+    id: wire.walletId,
+    connectionStatus: wire.connectionStatus,
+    expectedCashMinor: wire.expectedCashPoisha,
+    lastSequence: wire.lastSequence,
+    lastSyncedAt: wire.lastSyncedAt,
+    inventoryDifferenceMinor: wire.inventoryDifferencePoisha,
+    activity: wire.activity.map(toCashEvent),
+  };
+}
+
+function toCashMutation(wire: WireCashMutation): CashMutation {
+  return { event: toCashEvent(wire.event), wallet: toSmartWallet(wire.wallet) };
+}
+
+function toExpenseGroupMember(wire: WireExpenseGroupMember): ExpenseGroupMember {
+  return {
+    id: wire.userId,
+    name: wire.name,
+    maskedPhone: wire.maskedPhone,
+    isCurrentUser: wire.isCurrentUser,
+  };
+}
+
+function toExpenseGroupSummary(wire: WireExpenseGroupSummary): ExpenseGroupSummary {
+  return {
+    id: wire.groupId,
+    name: wire.name,
+    memberCount: wire.memberCount,
+    expenseCount: wire.expenseCount,
+    createdAt: wire.createdAt,
+  };
+}
+
+function toExpenseGroup(wire: WireExpenseGroup): ExpenseGroup {
+  return {
+    id: wire.groupId,
+    name: wire.name,
+    createdAt: wire.createdAt,
+    members: wire.members.map(toExpenseGroupMember),
+    expenses: wire.expenses.map((expense) => ({
+      id: expense.expenseId,
+      description: expense.description,
+      totalMinor: expense.totalPoisha,
+      splitType: expense.splitType,
+      paidBy: toExpenseGroupMember(expense.paidBy),
+      shares: expense.shares.map((share) => ({
+        member: toExpenseGroupMember(share.member),
+        amountMinor: share.amountPoisha,
+      })),
+      createdAt: expense.createdAt,
+    })),
+  };
+}
+
+function toSettlementPlan(wire: WireSettlementPlan): SettlementPlan {
+  return {
+    groupId: wire.groupId,
+    groupName: wire.groupName,
+    version: wire.planVersion,
+    positions: wire.positions.map((position) => ({
+      member: toExpenseGroupMember(position.member),
+      netMinor: position.netPoisha,
+      direction: position.direction,
+    })),
+    transfers: wire.transfers.map((item) => ({
+      from: toExpenseGroupMember(item.from),
+      to: toExpenseGroupMember(item.to),
+      amountMinor: item.amountPoisha,
+      isCurrentUserPayer: item.isCurrentUserPayer,
+    })),
+    optimizedTransferCount: wire.optimizedTransferCount,
+    currentUserOutgoingMinor: wire.currentUserOutgoingPoisha,
+    canCurrentUserSettle: wire.canCurrentUserSettle,
+  };
+}
+
+function toNotification(wire: WireNotification): Notification {
+  return {
+    id: wire.notificationId,
+    kind: wire.kind,
+    title: wire.title,
+    message: wire.message,
+    resourceType: wire.resourceType,
+    resourceId: wire.resourceId,
+    readAt: wire.readAt,
+    createdAt: wire.createdAt,
+  };
+}
+
+function toNotifications(wire: WireNotificationList): NotificationList {
+  return { items: wire.notifications.map(toNotification), unreadCount: wire.unreadCount };
+}
+
+function toScheduledTransfer(wire: WireScheduledTransfer): ScheduledTransfer {
+  return {
+    id: wire.scheduledTransferId,
+    reference: wire.reference,
+    status: wire.status,
+    amountMinor: wire.amountPoisha,
+    note: wire.note,
+    executeAt: wire.executeAt,
+    recipientName: wire.recipient.name,
+    recipientMaskedPhone: wire.recipient.maskedPhone,
+    transferReference: wire.transferReference,
+    failureCode: wire.failureCode,
+    failureMessage: wire.failureMessage,
+    authorizedAt: wire.authorizedAt,
+    resolvedAt: wire.resolvedAt,
+    createdAt: wire.createdAt,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Endpoints — docs/openapi.json                                               */
 /* -------------------------------------------------------------------------- */
 
 export const api = {
-  register: (body: { fullName: string; phone: string; pin: string }) =>
-    request<AuthResponse>("/auth/register", { method: "POST", body }),
+  register: async (body: { fullName: string; phone: string; pin: string }) =>
+    toAuth(
+      await request<WireAuthResponse>("/auth/register", {
+        method: "POST",
+        body: { name: body.fullName, phone: body.phone, pin: body.pin },
+      }),
+    ),
 
-  login: (body: { phone: string; pin: string }) =>
-    request<AuthResponse>("/auth/login", { method: "POST", body }),
+  login: async (body: { phone: string; pin: string }) =>
+    toAuth(await request<WireAuthResponse>("/auth/login", { method: "POST", body })),
 
-  me: () => request<AuthResponse["user"]>("/auth/me"),
+  me: async () => toUser(await request<WireUser>("/auth/me")),
 
-  account: () => request<AccountSummary>("/accounts/me"),
+  account: async () => toAccount(await request<WireAccount>("/accounts/me")),
 
   /** Returns only what is safe to show a sender before they commit. */
-  recipientPreview: (phone: string) =>
-    request<RecipientPreview>(`/users/search?q=${encodeURIComponent(phone)}`),
+  recipientPreview: async (phone: string): Promise<RecipientPreview> => {
+    const wire = await request<WireIdentity>(`/users/lookup?phone=${encodeURIComponent(phone)}`);
+    return { phone, fullName: wire.name, maskedPhone: wire.maskedPhone };
+  },
 
-  transfers: (cursor?: string) =>
-    request<TransferListResponse>(`/transfers${cursor ? `?cursor=${cursor}` : ""}`),
+  recentRecipients: async (): Promise<RecipientPreview[]> => {
+    const wire = await request<WireRecentRecipients>("/users/recent-recipients");
+    return wire.recipients.map((r) => ({
+      phone: r.phone,
+      fullName: r.name,
+      maskedPhone: r.maskedPhone,
+    }));
+  },
 
-  transfer: (reference: string) => request<Transfer>(`/transfers/${reference}`),
+  transfers: async (): Promise<TransferListResponse> => {
+    const wire = await request<{ transactions: WireTransaction[] }>("/transfers");
+    return { items: wire.transactions.map(toTransfer) };
+  },
 
-  createTransfer: (body: CreateTransferRequest, idempotencyKey: string) =>
-    request<Transfer>("/transfers", { method: "POST", body, idempotencyKey }),
+  transfer: async (reference: string) =>
+    toTransfer(await request<WireTransaction>(`/transfers/${encodeURIComponent(reference)}`)),
 
-  /** Backend endpoint intentionally isolated here until the group-transfer contract lands. */
-  createGroupTransfer: (body: CreateGroupTransferRequest, idempotencyKey: string) =>
-    request<Transfer>("/transfers/group", { method: "POST", body, idempotencyKey }),
+  createTransfer: async (body: CreateTransferRequest, idempotencyKey: string) =>
+    toReceipt(
+      await request<WireReceipt>("/transfers", {
+        method: "POST",
+        idempotencyKey,
+        body: {
+          recipientPhone: body.recipientPhone,
+          amountPoisha: body.amountMinor,
+          ...(body.note ? { note: body.note } : {}),
+          ...(body.pin ? { pin: body.pin } : {}),
+        },
+      }),
+    ),
 
-  moneyRequests: (direction?: "incoming" | "outgoing") =>
-    request<MoneyRequestListResponse>(`/money-requests${direction ? `?direction=${direction}` : ""}`),
+  /**
+   * The same endpoint as a direct send. A Group Transfer is one atomic Transfer
+   * with N+1 legs, not N transfers, so it must not have a second code path.
+   */
+  createGroupTransfer: async (body: CreateGroupTransferRequest, idempotencyKey: string) =>
+    toReceipt(
+      await request<WireReceipt>("/transfers", {
+        method: "POST",
+        idempotencyKey,
+        body: {
+          recipients: body.recipients.map((r) => ({ phone: r.phone, amountPoisha: r.amountMinor })),
+          ...(body.note ? { note: body.note } : {}),
+          ...(body.pin ? { pin: body.pin } : {}),
+        },
+      }),
+    ),
 
-  moneyRequest: (id: string) => request<MoneyRequest>(`/money-requests/${id}`),
+  requestReversal: async (reference: string, idempotencyKey: string) =>
+    toMoneyRequest(
+      await request<WireMoneyRequest>(
+        `/transfers/${encodeURIComponent(reference)}/reversal-request`,
+        { method: "POST", idempotencyKey },
+      ),
+    ),
 
-  createMoneyRequest: (body: CreateMoneyRequestRequest) =>
-    request<MoneyRequest>("/money-requests", { method: "POST", body }),
+  moneyRequests: async (direction: "incoming" | "outgoing"): Promise<MoneyRequestListResponse> => {
+    const wire = await request<{ moneyRequests: WireMoneyRequest[] }>(
+      `/money-requests?direction=${direction}`,
+    );
+    return { items: wire.moneyRequests.map(toMoneyRequest) };
+  },
 
-  payMoneyRequest: (id: string, idempotencyKey: string) =>
-    request<Transfer>(`/money-requests/${id}/pay`, { method: "POST", idempotencyKey }),
+  moneyRequest: async (id: string) =>
+    toMoneyRequest(await request<WireMoneyRequest>(`/money-requests/${encodeURIComponent(id)}`)),
 
-  declineMoneyRequest: (id: string) => request<MoneyRequest>(`/money-requests/${id}/decline`, { method: "POST" }),
+  createMoneyRequest: async (body: CreateMoneyRequestRequest, idempotencyKey: string) =>
+    toMoneyRequest(
+      await request<WireMoneyRequest>("/money-requests", {
+        method: "POST",
+        idempotencyKey,
+        body: {
+          payerPhone: body.payerPhone,
+          amountPoisha: body.amountMinor,
+          reason: body.reason,
+        },
+      }),
+    ),
 
-  cancelMoneyRequest: (id: string) => request<MoneyRequest>(`/money-requests/${id}/cancel`, { method: "POST" }),
+  /** Paying a request runs through the normal Transfer engine and returns its receipt. */
+  payMoneyRequest: async (id: string, idempotencyKey: string, pin?: string) =>
+    toReceipt(
+      await request<WireReceipt>(`/money-requests/${encodeURIComponent(id)}/pay`, {
+        method: "POST",
+        idempotencyKey,
+        body: pin ? { pin } : {},
+      }),
+    ),
 
-  /** Future scheduling endpoints are kept at this seam until backend merge. */
-  scheduledTransfers: () => request<ScheduledTransfer[]>("/scheduled-transfers"),
+  declineMoneyRequest: async (id: string) =>
+    toMoneyRequest(
+      await request<WireMoneyRequest>(`/money-requests/${encodeURIComponent(id)}/decline`, {
+        method: "POST",
+      }),
+    ),
 
-  createScheduledTransfer: (body: CreateScheduledTransferRequest) =>
-    request<ScheduledTransfer>("/scheduled-transfers", { method: "POST", body }),
+  cancelMoneyRequest: async (id: string) =>
+    toMoneyRequest(
+      await request<WireMoneyRequest>(`/money-requests/${encodeURIComponent(id)}/cancel`, {
+        method: "POST",
+      }),
+    ),
 
-  cancelScheduledTransfer: (id: string) => request<ScheduledTransfer>(`/scheduled-transfers/${id}/cancel`, { method: "POST" }),
+  smartWallet: async () => toSmartWallet(await request<WireSmartWallet>("/smart-wallet")),
 
-  notifications: () => request<NotificationListResponse>("/notifications"),
+  setSmartWalletConnection: async (connected: boolean) =>
+    toSmartWallet(
+      await request<WireSmartWallet>("/smart-wallet/connection", {
+        method: "POST",
+        body: { connected },
+      }),
+    ),
 
-  markNotificationRead: (id: string) => request<void>(`/notifications/${id}/read`, { method: "POST" }),
+  recordCashEvent: async (
+    body: { kind: "CASH_IN" | "CASH_OUT"; amountMinor: number; reason?: string },
+    idempotencyKey: string,
+  ) =>
+    toCashMutation(
+      await request<WireCashMutation>("/smart-wallet/events", {
+        method: "POST",
+        idempotencyKey,
+        body: {
+          kind: body.kind,
+          amountPoisha: body.amountMinor,
+          ...(body.reason ? { reason: body.reason } : {}),
+        },
+      }),
+    ),
 
-  integrity: () => request<IntegrityReport>("/internal/integrity"),
+  reconcileCash: async (
+    body: { countedCashMinor: number; reason: string },
+    idempotencyKey: string,
+  ) =>
+    toCashMutation(
+      await request<WireCashMutation>("/smart-wallet/reconciliations", {
+        method: "POST",
+        idempotencyKey,
+        body: { countedCashPoisha: body.countedCashMinor, reason: body.reason },
+      }),
+    ),
 
-  systemInfo: () => request<SystemInfo>("/internal/system-info"),
+  expenseGroups: async (): Promise<ExpenseGroupSummary[]> => {
+    const wire = await request<{ groups: WireExpenseGroupSummary[] }>("/expense-groups");
+    return wire.groups.map(toExpenseGroupSummary);
+  },
+
+  createExpenseGroup: async (
+    body: { name: string; memberPhones: string[] },
+    idempotencyKey: string,
+  ) =>
+    toExpenseGroup(
+      await request<WireExpenseGroup>("/expense-groups", {
+        method: "POST",
+        idempotencyKey,
+        body,
+      }),
+    ),
+
+  expenseGroup: async (id: string) =>
+    toExpenseGroup(
+      await request<WireExpenseGroup>(`/expense-groups/${encodeURIComponent(id)}`),
+    ),
+
+  createGroupExpense: async (
+    groupId: string,
+    body: {
+      description: string;
+      paidByUserId: string;
+      totalMinor: number;
+      splitType: "EQUAL" | "EXACT" | "PERCENTAGE";
+      participantUserIds?: string[];
+      exactShares?: Array<{ userId: string; amountMinor: number }>;
+      percentageShares?: Array<{ userId: string; percentageBps: number }>;
+    },
+    idempotencyKey: string,
+  ) =>
+    toExpenseGroup(
+      await request<WireExpenseGroup>(
+        `/expense-groups/${encodeURIComponent(groupId)}/expenses`,
+        {
+          method: "POST",
+          idempotencyKey,
+          body: {
+            description: body.description,
+            paidByUserId: body.paidByUserId,
+            totalPoisha: body.totalMinor,
+            splitType: body.splitType,
+            ...(body.participantUserIds
+              ? { participantUserIds: body.participantUserIds }
+              : {}),
+            ...(body.exactShares
+              ? {
+                  exactShares: body.exactShares.map((share) => ({
+                    userId: share.userId,
+                    amountPoisha: share.amountMinor,
+                  })),
+                }
+              : {}),
+            ...(body.percentageShares ? { percentageShares: body.percentageShares } : {}),
+          },
+        },
+      ),
+    ),
+
+  settlementPlan: async (groupId: string) =>
+    toSettlementPlan(
+      await request<WireSettlementPlan>(
+        `/expense-groups/${encodeURIComponent(groupId)}/settlement-plan`,
+      ),
+    ),
+
+  settleExpenseGroup: async (
+    groupId: string,
+    planVersion: string,
+    idempotencyKey: string,
+    pin?: string,
+  ) =>
+    toReceipt(
+      await request<WireReceipt>(`/expense-groups/${encodeURIComponent(groupId)}/settle`, {
+        method: "POST",
+        idempotencyKey,
+        body: { planVersion, ...(pin ? { pin } : {}) },
+      }),
+    ),
+
+  notifications: async (unreadOnly = false) =>
+    toNotifications(
+      await request<WireNotificationList>(
+        `/notifications${unreadOnly ? "?unreadOnly=true" : ""}`,
+      ),
+    ),
+
+  markNotificationRead: async (id: string) =>
+    toNotifications(
+      await request<WireNotificationList>(
+        `/notifications/${encodeURIComponent(id)}/read`,
+        { method: "POST" },
+      ),
+    ),
+
+  markAllNotificationsRead: async () =>
+    toNotifications(
+      await request<WireNotificationList>("/notifications/read-all", { method: "POST" }),
+    ),
+
+  scheduledTransfers: async (): Promise<ScheduledTransfer[]> => {
+    const wire = await request<{ scheduledTransfers: WireScheduledTransfer[] }>(
+      "/scheduled-transfers",
+    );
+    return wire.scheduledTransfers.map(toScheduledTransfer);
+  },
+
+  createScheduledTransfer: async (
+    body: {
+      recipientPhone: string;
+      amountMinor: number;
+      executeAt: string;
+      note?: string;
+      pin?: string;
+    },
+    idempotencyKey: string,
+  ) =>
+    toScheduledTransfer(
+      await request<WireScheduledTransfer>("/scheduled-transfers", {
+        method: "POST",
+        idempotencyKey,
+        body: {
+          recipientPhone: body.recipientPhone,
+          amountPoisha: body.amountMinor,
+          executeAt: body.executeAt,
+          ...(body.note ? { note: body.note } : {}),
+          ...(body.pin ? { pin: body.pin } : {}),
+        },
+      }),
+    ),
+
+  cancelScheduledTransfer: async (id: string) =>
+    toScheduledTransfer(
+      await request<WireScheduledTransfer>(
+        `/scheduled-transfers/${encodeURIComponent(id)}/cancel`,
+        { method: "POST" },
+      ),
+    ),
+
+  /** Unauthenticated on purpose: the proof must be viewable without an account. */
+  integrity: () => request<IntegrityReport>("/integrity"),
+
+  systemInfo: () => request<SystemInfo>("/system-info"),
 };
 
 /** One key per compose session, reused unchanged across every retry of it. */

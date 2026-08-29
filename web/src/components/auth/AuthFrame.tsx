@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bird } from "lucide-react";
+import { Bird, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { LanguageToggle } from "@/components/i18n/LanguageToggle";
@@ -13,7 +13,21 @@ export function AuthFrame({ children }: { children: ReactNode }) {
             <Bird aria-hidden className="size-5 text-primary" strokeWidth={2.25} />
             Chorui
           </Link>
+
           <div className="flex items-center gap-1"><LanguageToggle /><ThemeToggle /></div>
+
+          <div className="flex items-center gap-2">
+            <Link
+              href="/admin"
+              aria-label="Open admin dashboard"
+              className="flex size-10 items-center justify-center rounded-md border border-divider bg-surface-subtle text-text-secondary transition-colors hover:border-purple-border hover:bg-purple-soft hover:text-primary-text"
+              title="Open admin dashboard"
+            >
+              <ShieldCheck aria-hidden className="size-4" />
+            </Link>
+            <ThemeToggle />
+          </div>
+
         </div>
         
         <section className="card p-5 sm:p-7">{children}</section>

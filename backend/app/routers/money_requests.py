@@ -1,5 +1,5 @@
-import re
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Response
@@ -10,21 +10,11 @@ from .. import idempotency as idem
 from ..db import get_session
 from ..deps import CurrentUser, current_user
 from ..errors import DomainError
+from ..rate_limits import consume as consume_rate_limit
 from ..services import money_requests
+from ..validation import normalize_bangladesh_phone, validate_pin
 
 router = APIRouter(prefix="/money-requests", tags=["money-requests"])
-
-BD_PHONE = re.compile(r"^01[3-9]\d{8}$")
-
-
-def _normalise_phone(value: str) -> str:
-    value = value.strip().replace(" ", "").replace("-", "")
-    if value.startswith("+880"):
-        value = "0" + value[4:]
-    if not BD_PHONE.fullmatch(value):
-        raise ValueError("Enter a Bangladeshi mobile number, like 01712345678.")
-    return value
-
 
 def _request_id(value: str) -> uuid.UUID:
     try:
@@ -40,12 +30,12 @@ class CreateMoneyRequestBody(BaseModel):
     amount_poisha: int = Field(alias="amountPoisha", gt=0)
     reason: str = Field(min_length=1, max_length=140)
 
-    model_config = {"populate_by_name": True}
+    model_config = {"populate_by_name": True, "extra": "forbid"}
 
     @field_validator("payer_phone")
     @classmethod
     def valid_phone(cls, value: str) -> str:
-        return _normalise_phone(value)
+        return normalize_bangladesh_phone(value)
 
     @field_validator("reason")
     @classmethod
@@ -66,12 +56,67 @@ class CreateMoneyRequestBody(BaseModel):
 class PayMoneyRequestBody(BaseModel):
     pin: str | None = Field(default=None, min_length=5, max_length=5)
 
+    model_config = {"extra": "forbid"}
+
     @field_validator("pin")
     @classmethod
     def numeric_pin(cls, value: str | None) -> str | None:
-        if value is not None and not value.isdigit():
-            raise ValueError("Your PIN must be 5 digits.")
-        return value
+        return validate_pin(value)
+
+
+class SafeIdentity(BaseModel):
+    name: str
+    masked_phone: str = Field(alias="maskedPhone")
+
+    model_config = {"populate_by_name": True}
+
+
+class MoneyRequestResource(BaseModel):
+    request_id: str = Field(alias="requestId")
+    reference: str
+    direction: Literal["incoming", "outgoing"]
+    status: Literal["PENDING", "PAID", "DECLINED", "CANCELLED", "EXPIRED"]
+    amount_poisha: int = Field(alias="amountPoisha")
+    reason: str
+    requester: SafeIdentity
+    payer: SafeIdentity
+    transfer_reference: str | None = Field(alias="transferReference")
+    created_at: datetime = Field(alias="createdAt")
+    expires_at: datetime = Field(alias="expiresAt")
+    resolved_at: datetime | None = Field(alias="resolvedAt")
+
+    model_config = {"populate_by_name": True}
+
+
+class MoneyRequestList(BaseModel):
+    money_requests: list[MoneyRequestResource] = Field(alias="moneyRequests")
+
+    model_config = {"populate_by_name": True}
+
+
+class ReceiptRecipient(BaseModel):
+    name: str
+    masked_phone: str = Field(alias="maskedPhone")
+    amount_poisha: int = Field(alias="amountPoisha")
+
+    model_config = {"populate_by_name": True}
+
+
+class MoneyRequestPaymentReceipt(BaseModel):
+    transfer_id: str = Field(alias="transferId")
+    reference: str
+    kind: Literal["P2P"]
+    status: Literal["COMPLETED"]
+    total_poisha: int = Field(alias="totalPoisha")
+    note: str | None
+    risk_reason: str | None = Field(alias="riskReason")
+    sender_balance_after_poisha: int = Field(alias="senderBalanceAfterPoisha")
+    completed_at: datetime = Field(alias="completedAt")
+    recipients: list[ReceiptRecipient]
+    money_request_id: str = Field(alias="moneyRequestId")
+    money_request_reference: str = Field(alias="moneyRequestReference")
+
+    model_config = {"populate_by_name": True}
 
 
 def _replay(response: Response, replay: idem.ReplayResult):
@@ -80,7 +125,7 @@ def _replay(response: Response, replay: idem.ReplayResult):
     return replay.body
 
 
-@router.post("")
+@router.post("", status_code=201, response_model=MoneyRequestResource)
 def create_money_request(
     body: CreateMoneyRequestBody,
     response: Response,
@@ -88,6 +133,7 @@ def create_money_request(
     user: CurrentUser = Depends(current_user),
     session: Session = Depends(get_session),
 ):
+    consume_rate_limit("money_request_create", str(user.user_id), 20)
     key = idem.require_key(idempotency_key)
     request_hash = idem.hash_request(body.fingerprint())
     try:
@@ -119,7 +165,7 @@ def create_money_request(
     return result
 
 
-@router.get("")
+@router.get("", response_model=MoneyRequestList)
 def list_money_requests(
     direction: Literal["incoming", "outgoing"] = "incoming",
     status: Literal["PENDING", "PAID", "DECLINED", "CANCELLED", "EXPIRED"] | None = None,
@@ -136,7 +182,7 @@ def list_money_requests(
     )
 
 
-@router.get("/{request_id}")
+@router.get("/{request_id}", response_model=MoneyRequestResource)
 def get_money_request(
     request_id: str,
     user: CurrentUser = Depends(current_user),
@@ -145,7 +191,9 @@ def get_money_request(
     return money_requests.get(session, _request_id(request_id), user.account_id)
 
 
-@router.post("/{request_id}/pay")
+@router.post(
+    "/{request_id}/pay", status_code=201, response_model=MoneyRequestPaymentReceipt
+)
 def pay_money_request(
     request_id: str,
     body: PayMoneyRequestBody,
@@ -186,7 +234,7 @@ def pay_money_request(
     return result
 
 
-@router.post("/{request_id}/decline")
+@router.post("/{request_id}/decline", response_model=MoneyRequestResource)
 def decline_money_request(
     request_id: str,
     user: CurrentUser = Depends(current_user),
@@ -207,7 +255,7 @@ def decline_money_request(
         raise
 
 
-@router.post("/{request_id}/cancel")
+@router.post("/{request_id}/cancel", response_model=MoneyRequestResource)
 def cancel_money_request(
     request_id: str,
     user: CurrentUser = Depends(current_user),

@@ -9,11 +9,20 @@ class DomainError(Exception):
     never a raw validation dump.
     """
 
-    def __init__(self, code: str, message: str, status_code: int = 400, **extra):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        status_code: int = 400,
+        *,
+        headers: dict[str, str] | None = None,
+        **extra,
+    ):
         super().__init__(message)
         self.code = code
         self.message = message
         self.status_code = status_code
+        self.headers = headers or {}
         self.extra = extra
 
     def body(self, trace_id: str) -> dict:
@@ -32,4 +41,9 @@ def not_found(code: str, msg: str):
 
 async def domain_error_handler(request: Request, exc: DomainError):
     trace_id = getattr(request.state, "trace_id", "-")
-    return JSONResponse(status_code=exc.status_code, content=exc.body(trace_id))
+    request.state.result = exc.code
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.body(trace_id),
+        headers=exc.headers,
+    )

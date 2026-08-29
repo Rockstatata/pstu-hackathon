@@ -1,4 +1,3 @@
-import re
 import uuid
 
 from fastapi import APIRouter, Depends, Request
@@ -12,26 +11,13 @@ from ..config import settings
 from ..db import get_session
 from ..deps import CurrentUser, current_user
 from ..errors import DomainError
+from ..network import client_address
+from ..rate_limits import consume as consume_rate_limit
 from ..security import hash_pin, issue_token, verify_absent_user, verify_pin
 from ..services.transfer import issue_registration_grant
+from ..validation import normalize_bangladesh_phone, validate_pin
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-BD_PHONE = re.compile(r"^01[3-9]\d{8}$")
-
-
-def client_address(request: Request) -> str | None:
-    """The caller's address, as seen through the gateway.
-
-    nginx sets X-Forwarded-For, so request.client.host would otherwise be the
-    gateway for every caller -- which would put all users in one lockout bucket
-    and let any failed login lock out everybody.
-    """
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else None
-
 
 class Credentials(BaseModel):
     phone: str
@@ -40,19 +26,12 @@ class Credentials(BaseModel):
     @field_validator("phone")
     @classmethod
     def valid_phone(cls, v: str) -> str:
-        v = v.strip().replace(" ", "").replace("-", "")
-        if v.startswith("+880"):
-            v = "0" + v[4:]
-        if not BD_PHONE.match(v):
-            raise ValueError("Enter a Bangladeshi mobile number, like 01712345678.")
-        return v
+        return normalize_bangladesh_phone(v)
 
     @field_validator("pin")
     @classmethod
     def numeric_pin(cls, v: str) -> str:
-        if not v.isdigit():
-            raise ValueError("Your PIN must be 5 digits.")
-        return v
+        return validate_pin(v) or v
 
 
 class RegisterBody(Credentials):
@@ -97,7 +76,9 @@ def register(body: RegisterBody, session: Session = Depends(get_session)):
 
 @router.post("/login")
 def login(body: Credentials, request: Request, session: Session = Depends(get_session)):
-    subject = lockout.subject_for(body.phone, client_address(request))
+    address = client_address(request)
+    consume_rate_limit("login", address, 20)
+    subject = lockout.subject_for(body.phone, address)
     lockout.guard(session, subject)
 
     row = session.execute(

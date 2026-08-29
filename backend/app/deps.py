@@ -1,7 +1,7 @@
 import uuid
 from dataclasses import dataclass
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,7 @@ class CurrentUser:
 
 
 def current_user(
+    request: Request,
     authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
 ) -> CurrentUser:
@@ -48,10 +49,12 @@ def current_user(
     if row is None:
         raise unauthenticated()
 
-    return CurrentUser(
+    current = CurrentUser(
         user_id=row.id,
         account_id=row.account_id,
         name=row.name,
         phone=row.phone,
         pin_hash=row.pin_hash,
     )
+    request.state.authenticated_user_id = str(current.user_id)
+    return current

@@ -140,6 +140,7 @@ def execute(
     idempotency_key: str,
     request_hash: str,
     receipt_context: dict | None = None,
+    fail_after_journal: bool = False,
 ) -> tuple[int, dict]:
     """Run one Transfer to completion, or leave the Ledger exactly as it was.
 
@@ -207,6 +208,7 @@ def execute(
         note=note,
         risk_decision=risk.decision,
         risk_reason=risk.reason,
+        fail_after_journal=fail_after_journal,
     )
 
     body = _receipt(

@@ -61,16 +61,22 @@ def system_info(session: Session = Depends(get_session)):
     replicas = session.execute(
         text(
             """
-            SELECT metadata_json->>'instance' AS instance, MAX(created_at) AS last_seen
-            FROM audit_events
-            WHERE event_type = 'REPLICA_STARTED'
-            GROUP BY 1 ORDER BY 2 DESC
+            SELECT instance_id AS instance, started_at, last_seen_at,
+                   last_seen_at > now() - make_interval(secs => :freshness) AS healthy
+            FROM replica_heartbeats
+            ORDER BY last_seen_at DESC
             """
-        )
+        ),
+        {"freshness": settings.heartbeat_freshness_seconds},
     ).all()
+    healthy_count = sum(1 for replica in replicas if replica.healthy)
 
     return {
         "instance": settings.instance_id,
+        "health": "HEALTHY" if healthy_count == settings.expected_replicas else "DEGRADED",
+        "expectedReplicas": settings.expected_replicas,
+        "healthyReplicas": healthy_count,
+        "freshnessWindowSeconds": settings.heartbeat_freshness_seconds,
         "policy": {
             "maxTransferPoisha": settings.max_transfer_poisha,
             "maxDailySendPoisha": settings.max_daily_send_poisha,
@@ -81,6 +87,12 @@ def system_info(session: Session = Depends(get_session)):
             "lockTimeoutMs": settings.lock_timeout_ms,
         },
         "replicas": [
-            {"instance": r.instance, "lastSeen": r.last_seen.isoformat()} for r in replicas
+            {
+                "instance": r.instance,
+                "startedAt": r.started_at.isoformat(),
+                "lastSeen": r.last_seen_at.isoformat(),
+                "healthy": r.healthy,
+            }
+            for r in replicas
         ],
     }

@@ -156,3 +156,28 @@ CREATE INDEX IF NOT EXISTS audit_type_idx ON audit_events (event_type, created_a
 CREATE INDEX IF NOT EXISTS audit_auth_subject_idx
     ON audit_events ((metadata_json->>'subject'), created_at DESC)
     WHERE event_type IN ('LOGIN_FAILURE', 'LOGIN_SUCCESS');
+
+-- Fixed-window counters live in PostgreSQL so every replica observes the same
+-- allowance. Subjects are SHA-256 digests; raw client addresses are not retained.
+CREATE TABLE IF NOT EXISTS rate_limit_counters (
+    scope              VARCHAR(32) NOT NULL,
+    subject_hash       CHAR(64)    NOT NULL,
+    window_started_at  TIMESTAMPTZ NOT NULL,
+    request_count      INTEGER     NOT NULL DEFAULT 1,
+    PRIMARY KEY (scope, subject_hash, window_started_at),
+    CONSTRAINT rate_limit_count_positive CHECK (request_count > 0)
+);
+
+CREATE INDEX IF NOT EXISTS rate_limit_window_idx
+    ON rate_limit_counters (window_started_at);
+
+-- Each process refreshes one row every five seconds. Stale rows are retained as
+-- useful operational history but are never counted as healthy.
+CREATE TABLE IF NOT EXISTS replica_heartbeats (
+    instance_id  TEXT        PRIMARY KEY,
+    started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS replica_heartbeat_freshness_idx
+    ON replica_heartbeats (last_seen_at DESC);

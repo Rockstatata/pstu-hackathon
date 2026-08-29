@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     lock_timeout_ms: int = 3000
 
     cors_origins: str = "http://localhost:3000"
+    app_environment: str = "development"
+    max_request_body_bytes: int = 32 * 1024
+    expected_replicas: int = 3
+    heartbeat_interval_seconds: int = 5
+    heartbeat_freshness_seconds: int = 15
+    chaos_enabled: bool = False
+    trusted_proxy_cidrs: str = "127.0.0.1/32,::1/128,172.16.0.0/12"
 
     # Which API replica this process is. Docker sets HOSTNAME to the container
     # id, which is what the integrity dashboard shows as a per-instance dot.
@@ -42,6 +49,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def trusted_proxy_cidr_list(self) -> list[str]:
+        return [value.strip() for value in self.trusted_proxy_cidrs.split(",") if value.strip()]
 
 
 settings = Settings()

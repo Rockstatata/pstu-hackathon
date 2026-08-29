@@ -1,7 +1,8 @@
 import uuid
+from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, Response
-from pydantic import BaseModel, Field, model_validator
+from fastapi import APIRouter, Depends, Header, Query, Response
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,7 @@ from ..db import SessionLocal, get_session
 from ..deps import CurrentUser, current_user
 from ..errors import DomainError
 from ..services import ledger, transfer
+from ..validation import normalize_bangladesh_phone, validate_pin
 
 router = APIRouter(tags=["transfers"])
 
@@ -32,7 +34,12 @@ class RecipientBody(BaseModel):
     phone: str
     amount_poisha: int = Field(alias="amountPoisha")
 
-    model_config = {"populate_by_name": True}
+    model_config = {"populate_by_name": True, "extra": "forbid"}
+
+    @field_validator("phone")
+    @classmethod
+    def valid_phone(cls, value: str) -> str:
+        return normalize_bangladesh_phone(value)
 
 
 class TransferBody(BaseModel):
@@ -51,16 +58,31 @@ class TransferBody(BaseModel):
     note: str | None = Field(default=None, max_length=140)
     pin: str | None = None
 
-    model_config = {"populate_by_name": True}
+    model_config = {"populate_by_name": True, "extra": "forbid"}
+
+    @field_validator("recipient_phone")
+    @classmethod
+    def valid_recipient_phone(cls, value: str | None) -> str | None:
+        return normalize_bangladesh_phone(value) if value is not None else None
+
+    @field_validator("pin")
+    @classmethod
+    def valid_pin(cls, value: str | None) -> str | None:
+        return validate_pin(value)
 
     @model_validator(mode="after")
     def normalise(self):
-        if not self.recipients:
+        shorthand_present = self.recipient_phone is not None or self.amount_poisha is not None
+        if self.recipients is not None and shorthand_present:
+            raise ValueError("Use either one recipient or the recipients list, not both.")
+        if self.recipients is None:
             if not self.recipient_phone or self.amount_poisha is None:
                 raise ValueError("Provide a recipient and an amount.")
             self.recipients = [
                 RecipientBody(phone=self.recipient_phone, amount_poisha=self.amount_poisha)
             ]
+        if not self.recipients:
+            raise ValueError("Add at least one person to send to.")
         return self
 
     def fingerprint(self) -> dict:
@@ -101,7 +123,7 @@ def _audit_rejection(user: CurrentUser, exc: DomainError, body: TransferBody) ->
         session.commit()
 
 
-@router.post("/transfers")
+@router.post("/transfers", status_code=201)
 def create_transfer(
     body: TransferBody,
     response: Response,
@@ -159,12 +181,51 @@ def _count_replay(user_id: uuid.UUID) -> None:
         session.commit()
 
 
+@router.post("/chaos/transfers/fail-after-journal", include_in_schema=False)
+def fail_after_journal(
+    body: TransferBody,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: CurrentUser = Depends(current_user),
+    session: Session = Depends(get_session),
+):
+    """Prove that a failure between Journal writes and balance updates rolls back."""
+    if not settings.chaos_enabled or settings.app_environment.lower() == "production":
+        raise DomainError("NOT_FOUND", "No route found.", 404)
+
+    key = idem.require_key(idempotency_key)
+    try:
+        transfer.execute(
+            session,
+            sender_user_id=user.user_id,
+            sender_account_id=user.account_id,
+            sender_pin_hash=user.pin_hash,
+            recipients=[
+                transfer.Recipient(phone=r.phone, amount_poisha=r.amount_poisha)
+                for r in body.recipients or []
+            ],
+            note=body.note,
+            pin=body.pin,
+            idempotency_key=key,
+            request_hash=idem.hash_request(body.fingerprint()),
+            fail_after_journal=True,
+        )
+    except ledger.InjectedFailure as exc:
+        session.rollback()
+        raise DomainError(
+            "CHAOS_INJECTED",
+            "The test failure was injected and the transaction was rolled back.",
+            503,
+        ) from exc
+    session.rollback()
+    raise DomainError("INTERNAL_ERROR", "The failure injection did not run.", 500)
+
+
 @router.get("/transfers")
 def list_transfers(
     user: CurrentUser = Depends(current_user),
     session: Session = Depends(get_session),
-    limit: int = 50,
-    direction: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    direction: Literal["sent", "received"] | None = None,
 ):
     """This Account's movements, read from the Ledger rather than from transfers.
 
@@ -216,7 +277,7 @@ def list_transfers(
             LIMIT :limit
             """
         ),
-        {"aid": user.account_id, "limit": min(limit, 200)},
+        {"aid": user.account_id, "limit": limit},
     ).all()
 
     return {"transactions": [_row_to_item(r) for r in rows]}
@@ -298,15 +359,8 @@ def get_transfer(
         raise DomainError("TRANSFER_NOT_FOUND", "No transaction found with that ID.", 404)
 
     item = _row_to_item(row)
-    item["reversible"] = (
-        row.kind == "P2P" and row.amount_poisha < 0
+    item["reversible"] = False
+    item["notReversibleReason"] = (
+        "Consent-based Reversals are not available in this release."
     )
-    if not item["reversible"]:
-        item["notReversibleReason"] = (
-            "Group transfers cannot be reversed one recipient at a time."
-            if row.kind == "GROUP"
-            else "A reversal cannot itself be reversed."
-            if row.kind == "REVERSAL"
-            else "Only money you sent can be reversed."
-        )
     return item

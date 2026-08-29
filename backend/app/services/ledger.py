@@ -26,6 +26,10 @@ class Leg:
 _REF_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no I, L, O, 0, 1 -- read aloud safely
 
 
+class InjectedFailure(RuntimeError):
+    """Chaos-laboratory failure after Journal writes, before balance updates."""
+
+
 def new_reference() -> str:
     return "TXN" + "".join(secrets.choice(_REF_ALPHABET) for _ in range(11))
 
@@ -62,6 +66,7 @@ def post(
     risk_decision: str | None = None,
     risk_reason: str | None = None,
     reversal_of: uuid.UUID | None = None,
+    fail_after_journal: bool = False,
 ) -> tuple[uuid.UUID, str]:
     """Write a Transfer and its Journal Entries, and move the cached balances.
 
@@ -111,6 +116,9 @@ def post(
             for leg in legs
         ],
     )
+
+    if fail_after_journal:
+        raise InjectedFailure("injected failure after journal entries")
 
     # The cached balance moves in the same statement batch as the entries that
     # justify it (ADR-0001). The CHECK constraint on accounts is the last line of

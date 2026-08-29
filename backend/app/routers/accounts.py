@@ -1,13 +1,15 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import get_session
 from ..deps import CurrentUser, current_user
 from ..errors import DomainError
+from ..rate_limits import consume as consume_rate_limit
 from ..services.transfer import mask_phone
+from ..validation import normalize_bangladesh_phone
 
 router = APIRouter(tags=["accounts"])
 
@@ -32,7 +34,7 @@ def my_account(
 
 @router.get("/users/lookup")
 def lookup_recipient(
-    phone: str,
+    phone: str = Query(min_length=10, max_length=20),
     user: CurrentUser = Depends(current_user),
     session: Session = Depends(get_session),
 ):
@@ -41,7 +43,11 @@ def lookup_recipient(
     Never returns a balance, a user id, or a full phone number. This endpoint is
     reachable by any authenticated user, so it must not be a directory to scrape.
     """
-    phone = phone.strip().replace(" ", "").replace("-", "")
+    consume_rate_limit("recipient_lookup", str(user.user_id), 60)
+    try:
+        phone = normalize_bangladesh_phone(phone)
+    except ValueError as exc:
+        raise DomainError("INVALID_REQUEST", str(exc), 422) from exc
     row = session.execute(
         text(
             "SELECT u.name, u.phone FROM users u JOIN accounts a ON a.user_id = u.id "

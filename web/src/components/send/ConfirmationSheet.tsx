@@ -48,7 +48,7 @@ export function ConfirmationSheet({ amountMinor, recipient, recipients, note, co
         <div className="my-6 text-center">
           <AmountDisplay minor={amountMinor} size="lg" />
         </div>
-        {recipients && recipients.length > 1 ? <div className="max-h-52 space-y-2 overflow-y-auto pr-1">{recipients.map((item) => <RecipientCard key={item.userId} recipient={item} />)}</div> : <RecipientCard recipient={recipient} />}
+        {recipients && recipients.length > 1 ? <div className="max-h-52 space-y-2 overflow-y-auto pr-1">{recipients.map((item) => <RecipientCard key={item.phone} recipient={item} />)}</div> : <RecipientCard recipient={recipient} />}
         {note && <p className="mt-4 border-l-2 border-purple-border pl-3 text-[13px] leading-5 text-text-secondary">{note}</p>}
         {children}
         {error && <p aria-live="polite" className="mt-4 rounded-md bg-danger-surface px-3 py-2 text-[13px] font-medium text-danger-text">{error}</p>}

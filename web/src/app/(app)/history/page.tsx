@@ -4,7 +4,6 @@ import { Filter, ReceiptText } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { TransactionList } from "@/components/tx/TransactionList";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { FixtureNotice } from "@/components/ui/FixtureNotice";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { TransactionListSkeleton } from "@/components/ui/Skeleton";
 import { ApiError, api } from "@/lib/api";
@@ -53,7 +52,7 @@ export default function HistoryPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <FixtureNotice />
+      
       {offline && <OfflineBanner />}
       <header className="mb-5"><p className="text-[13px] font-medium text-text-secondary">Your account activity</p><h1 className="mt-1 text-[24px] font-semibold leading-8">Transaction history</h1></header>
       <div className="mb-5 flex items-center gap-2 overflow-x-auto pb-1" aria-label="Transaction filters">

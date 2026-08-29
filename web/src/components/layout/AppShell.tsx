@@ -3,9 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bird, Settings } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
-import { NotificationBell } from "@/components/ui/NotificationBell";
-import { api } from "@/lib/api";
+import type { ReactNode } from "react";
 import { shippedTabs } from "@/lib/nav";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
@@ -16,15 +14,6 @@ function isCurrent(pathname: string, href: string) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const tabs = shippedTabs();
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    api.notifications()
-      .then(({ items }) => active && setUnreadNotifications(items.filter((item) => item.readAt === null).length))
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, [pathname]);
 
   return (
     <div className="min-h-dvh bg-bg text-text lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
@@ -61,7 +50,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <span className="hidden text-[13px] font-medium text-text-secondary lg:block">Move money with care.</span>
           <div className="flex items-center gap-1">
-            <NotificationBell unread={unreadNotifications} />
             <Link href="/settings" className="inline-flex size-11 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-subtle hover:text-text" aria-label="Profile and settings">
               <Settings aria-hidden className="size-5" />
             </Link>

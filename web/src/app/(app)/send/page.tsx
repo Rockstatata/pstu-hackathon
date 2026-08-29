@@ -7,20 +7,14 @@ import { useEffect, useMemo, useState } from "react";
 import { AmountInput } from "@/components/money/AmountInput";
 import { RecipientCard } from "@/components/money/RecipientCard";
 import { ConfirmationSheet } from "@/components/send/ConfirmationSheet";
+import { StepUpDialog } from "@/components/send/StepUpDialog";
 import { Button } from "@/components/ui/Button";
-import { FixtureNotice } from "@/components/ui/FixtureNotice";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { PhoneInput } from "@/components/ui/PhoneInput";
 import { ApiError, api, newIdempotencyKey } from "@/lib/api";
-import { formatTaka, parseTakaToPoisha } from "@/lib/money";
+import { formatTaka, initialsOf, parseTakaToPoisha } from "@/lib/money";
 import { useOnlineStatus } from "@/lib/use-online-status";
 import type { AccountSummary, RecipientPreview } from "@/lib/types";
-
-const RECENT_RECIPIENTS = [
-  { name: "Rahim Uddin", phone: "01798765432", initials: "RU" },
-  { name: "Nusrat Jahan", phone: "01611122233", initials: "NJ" },
-  { name: "Chayon Das", phone: "01855566677", initials: "CD" },
-];
 
 const TRANSFER_LIMIT_MINOR = 10_000_000;
 
@@ -35,6 +29,8 @@ export default function SendPage() {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [idempotencyKey] = useState(newIdempotencyKey);
+  const [stepUpReason, setStepUpReason] = useState<string | null>(null);
+  const [recents, setRecents] = useState<RecipientPreview[]>([]);
   const offline = !useOnlineStatus();
   const recipient = lookup?.phone === phone ? lookup.recipient : null;
   const recipientError = lookup?.phone === phone ? lookup.error : null;
@@ -57,6 +53,13 @@ export default function SendPage() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    // People this Account has actually paid, from the Ledger. Never a seeded list.
+    api.recentRecipients().then((list) => active && setRecents(list)).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
     if (phone.length !== 11) return;
     let active = true;
     api.recipientPreview(phone)
@@ -73,14 +76,31 @@ export default function SendPage() {
     setShowConfirmation(true);
   }
 
-  async function confirmTransfer() {
+  /**
+   * One idempotency key for this compose session, resent unchanged on every
+   * attempt — including the Step-Up retry, because a PIN is further proof of the
+   * same intention rather than a second transfer.
+   */
+  async function confirmTransfer(pin?: string) {
     if (!recipient || amountMinor === null) return;
     setSubmitting(true);
     setFormError(null);
     try {
-      const transfer = await api.createTransfer({ recipientUserId: recipient.userId, amountMinor, note: note.trim() || undefined }, idempotencyKey);
-      router.replace(`/send/receipt/${transfer.reference}`);
+      const receipt = await api.createTransfer(
+        { recipientPhone: recipient.phone, amountMinor, note: note.trim() || undefined, pin },
+        idempotencyKey,
+      );
+      router.replace(`/send/receipt/${receipt.reference}`);
     } catch (cause) {
+      // The server wants another identity check. This is not a failure, and no
+      // money has moved, so the compose state is kept exactly as it is.
+      if (cause instanceof ApiError && cause.code === "STEP_UP_REQUIRED") {
+        setStepUpReason(cause.stepUpReason ?? cause.sentence);
+        return;
+      }
+      // Let the dialog report a wrong PIN in place, so the person can retype it.
+      if (cause instanceof ApiError && cause.code === "STEP_UP_FAILED") throw cause;
+
       const sentence = cause instanceof ApiError ? cause.sentence : "Something went wrong. No money has moved.";
       // A network outcome can be ambiguous. Keep the idempotency key and the confirmation
       // sheet so the person can check history rather than seeing a false failure receipt.
@@ -96,7 +116,7 @@ export default function SendPage() {
 
   return (
     <div className="mx-auto max-w-md pb-24">
-      <FixtureNotice />
+      
       {offline && <OfflineBanner />}
       <Link href="/" className="mb-3 inline-flex min-h-11 items-center gap-1 text-[13px] font-semibold text-primary-text hover:underline"><ArrowLeft aria-hidden className="size-4" />Home</Link>
       <h1 className="text-[24px] font-semibold leading-8">Send money</h1>
@@ -107,12 +127,14 @@ export default function SendPage() {
         <PhoneInput value={phone} onChange={setPhone} error={recipientError} label="Recipient phone number" autoFocus />
         {lookingUp && <p className="flex items-center gap-2 text-[13px] text-text-secondary"><span className="size-3 animate-spin rounded-full border-2 border-purple-border border-t-primary" />Looking up recipient</p>}
         {recipient && <div className="space-y-2"><p className="flex items-center gap-1.5 text-[13px] font-medium text-success-text"><CheckCircle2 aria-hidden className="size-4" />Recipient found</p><RecipientCard recipient={recipient} /></div>}
-        <div>
-          <p className="mb-2 text-[13px] font-medium text-text-secondary">Recent recipients</p>
-          <div className="grid grid-cols-3 gap-2">
-            {RECENT_RECIPIENTS.map((item) => <button key={item.phone} type="button" onClick={() => setPhone(item.phone)} className="min-h-20 rounded-md border border-divider bg-surface px-2 py-2 text-center transition-colors hover:border-purple-border hover:bg-surface-subtle"><span aria-hidden className="mx-auto flex size-8 items-center justify-center rounded-full bg-purple-soft text-[11px] font-semibold text-primary-text">{item.initials}</span><span className="mt-1 block truncate text-[12px] font-medium text-text">{item.name.split(" ")[0]}</span></button>)}
+        {recents.length > 0 && (
+          <div>
+            <p className="mb-2 text-[13px] font-medium text-text-secondary">Recent recipients</p>
+            <div className="grid grid-cols-3 gap-2">
+              {recents.map((item) => <button key={item.phone} type="button" onClick={() => setPhone(item.phone)} className="min-h-20 rounded-md border border-divider bg-surface px-2 py-2 text-center transition-colors hover:border-purple-border hover:bg-surface-subtle"><span aria-hidden className="mx-auto flex size-8 items-center justify-center rounded-full bg-purple-soft text-[11px] font-semibold text-primary-text">{initialsOf(item.fullName)}</span><span className="mt-1 block truncate text-[12px] font-medium text-text">{item.fullName.split(" ")[0]}</span></button>)}
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       <section className="mt-9 space-y-5 border-t border-divider pt-7" aria-labelledby="amount-heading">
@@ -126,7 +148,8 @@ export default function SendPage() {
         <div className="mx-auto max-w-md"><Button full onClick={continueToConfirmation} disabled={offline || !recipient || Boolean(amountError) || amountMinor === null || amountMinor <= 0}>Review transfer <ChevronRight aria-hidden className="size-4" /></Button></div>
       </div>
 
-      {showConfirmation && recipient && amountMinor !== null && <ConfirmationSheet amountMinor={amountMinor} recipient={recipient} note={note.trim()} confirming={submitting} disabled={offline} error={offline ? "Reconnect to securely send money." : formError} onCancel={() => { if (!submitting) { setShowConfirmation(false); setFormError(null); } }} onConfirm={confirmTransfer} />}
+      {showConfirmation && recipient && amountMinor !== null && <ConfirmationSheet amountMinor={amountMinor} recipient={recipient} note={note.trim()} confirming={submitting} disabled={offline} error={offline ? "Reconnect to securely send money." : formError} onCancel={() => { if (!submitting) { setShowConfirmation(false); setFormError(null); } }} onConfirm={() => void confirmTransfer()} />}
+      {stepUpReason && <StepUpDialog reason={stepUpReason} onCancel={() => setStepUpReason(null)} onVerify={(pin) => confirmTransfer(pin)} />}
     </div>
   );
 }

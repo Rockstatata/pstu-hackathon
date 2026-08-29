@@ -9,7 +9,6 @@ import { AmountDisplay } from "@/components/money/AmountDisplay";
 import { TransactionList } from "@/components/tx/TransactionList";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { FixtureNotice } from "@/components/ui/FixtureNotice";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { TransactionListSkeleton } from "@/components/ui/Skeleton";
 import { ApiError, api } from "@/lib/api";
@@ -60,7 +59,7 @@ function HomeContent() {
 
   return (
     <>
-      <FixtureNotice />
+      
       {offline && <OfflineBanner />}
       <header className="mb-6 flex items-end justify-between gap-4">
         <div><p className="text-[13px] font-medium text-text-secondary">Your account</p><h1 className="mt-1 text-[24px] font-semibold leading-8">Good to see you</h1></div>

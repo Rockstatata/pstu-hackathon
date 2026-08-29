@@ -1,0 +1,266 @@
+@import "tailwindcss";
+
+/* Class strategy, not media-query-only: an explicit toggle has to beat the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Design tokens — docs/design-system.md is the source of truth.
+   Every value here has been measured against its real background. Four values
+   from the locked palette failed WCAG AA and are corrected; see the
+   "Measured corrections" table before changing any of them.
+   Nothing outside this file may hard-code a hex value.
+--------------------------------------------------------------------------- */
+
+:root {
+  /* surfaces */
+  --bg: #f8f7fc;
+  --bg-sidebar: #f1eefa;
+  --surface: #ffffff;
+  --surface-subtle: #f1eefa;
+  --surface-elevated: #ffffff;
+
+  /* brand */
+  --primary: #6d28d9;
+  --primary-hover: #5b21b6;
+  --primary-fg: #ffffff;
+  --primary-text: #6d28d9;
+  --accent: #8b5cf6;
+  --purple-soft: #ede9fe;
+  --purple-border: #ddd6fe;
+
+  /* text */
+  --text: #181221;
+  --text-secondary: #6b6475;
+  --text-muted: #938ba3;
+
+  /* lines */
+  --divider: #e5e0ef;
+  --border-control: #938ba3;
+  --focus: #6d28d9;
+
+  /* state */
+  --success: #16a34a;
+  --success-text: #15803d;
+  --success-surface: #dcfce7;
+  --warning: #d97706;
+  --warning-text: #b45309;
+  --warning-surface: #fef3c7;
+  --danger: #dc2626;
+  --danger-text: #b91c1c;
+  --danger-surface: #fee2e2;
+  --neutral-surface: #f1eefa;
+
+  /* the one gradient — BalanceCard only */
+  --gradient-text-safe: linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%);
+  --gradient-glow: #8b5cf6;
+
+  /* geometry + motion */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --shadow-card: 0 1px 2px rgb(24 18 33 / 0.04), 0 8px 24px -12px rgb(91 33 182 / 0.18);
+  --shadow-sheet: 0 -8px 40px -12px rgb(24 18 33 / 0.25);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --t-state: 150ms;
+  --t-sheet: 250ms;
+}
+
+.dark {
+  --bg: #0d0a1a;
+  --bg-sidebar: #110d20;
+  --surface: #181329;
+  --surface-subtle: #110d20;
+  --surface-elevated: #211a35;
+
+  --primary: #7c3aed;
+  --primary-hover: #8b5cf6;
+  --primary-fg: #ffffff;
+  --primary-text: #c084fc;
+  --accent: #8b5cf6;
+  --purple-soft: #2e2150;
+  --purple-border: #3b2b5c;
+
+  --text: #f5f3ff;
+  --text-secondary: #a8a0ba;
+  --text-muted: #756d87;
+
+  --divider: #2a2142;
+  --border-control: #756d87;
+  --focus: #c084fc;
+
+  --success: #22c55e;
+  --success-text: #4ade80;
+  --success-surface: #14331f;
+  --warning: #f59e0b;
+  --warning-text: #fbbf24;
+  --warning-surface: #3a2a0c;
+  --danger: #ef4444;
+  --danger-text: #f87171;
+  --danger-surface: #3a1717;
+  --neutral-surface: #211a35;
+
+  --gradient-text-safe: linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%);
+  --gradient-glow: #a855f7;
+
+  /* depth comes from the surface step, not shadow — shadows are invisible here */
+  --shadow-card: none;
+}
+
+/* The Admin/Judge experience is intentionally always dark. It reuses the
+   approved dark token values so operations data is projector-readable without
+   changing the user's chosen theme in the consumer application. */
+.admin-experience {
+  color-scheme: dark;
+  --bg: #0d0a1a;
+  --bg-sidebar: #110d20;
+  --surface: #181329;
+  --surface-subtle: #110d20;
+  --surface-elevated: #211a35;
+  --primary: #7c3aed;
+  --primary-hover: #8b5cf6;
+  --primary-fg: #ffffff;
+  --primary-text: #c084fc;
+  --accent: #8b5cf6;
+  --purple-soft: #2e2150;
+  --purple-border: #3b2b5c;
+  --text: #f5f3ff;
+  --text-secondary: #a8a0ba;
+  --text-muted: #756d87;
+  --divider: #2a2142;
+  --border-control: #756d87;
+  --focus: #c084fc;
+  --success: #22c55e;
+  --success-text: #4ade80;
+  --success-surface: #14331f;
+  --warning: #f59e0b;
+  --warning-text: #fbbf24;
+  --warning-surface: #3a2a0c;
+  --danger: #ef4444;
+  --danger-text: #f87171;
+  --danger-surface: #3a1717;
+  --neutral-surface: #211a35;
+  --shadow-card: none;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-sidebar: var(--bg-sidebar);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-elevated: var(--surface-elevated);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-text: var(--primary-text);
+  --color-accent: var(--accent);
+  --color-purple-soft: var(--purple-soft);
+  --color-purple-border: var(--purple-border);
+
+  --color-text: var(--text);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+
+  --color-divider: var(--divider);
+  --color-control: var(--border-control);
+  --color-focus: var(--focus);
+
+  --color-success: var(--success);
+  --color-success-text: var(--success-text);
+  --color-success-surface: var(--success-surface);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-warning-surface: var(--warning-surface);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-danger-surface: var(--danger-surface);
+  --color-neutral-surface: var(--neutral-surface);
+
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--divider);
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Visible focus on everything focusable. Never outline-none without a replacement. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    color: var(--text);
+    text-wrap: balance;
+  }
+}
+
+@layer utilities {
+  /* Money aligns on the decimal. Applied by AmountDisplay/AmountInput/MetricTile
+     /IntegrityRow only — deliberately not global. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  .card {
+    background-color: var(--surface);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-card);
+    border: 1px solid var(--divider);
+  }
+
+  /* The one gradient surface in the app. Text sits only on the dark half; the
+     glow is decorative and nothing may be written over it. */
+  .balance-gradient {
+    background-image: var(--gradient-text-safe);
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .sheet-enter {
+    animation: sheet-enter var(--t-sheet) var(--ease) both;
+  }
+}
+
+@keyframes sheet-enter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+/* A state change still has to be perceivable, so opacity survives. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

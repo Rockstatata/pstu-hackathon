@@ -57,3 +57,50 @@ The five canonical triage roles, each label string equal to its name. See `docs/
 ### Domain docs
 
 Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+---
+
+## Design Context
+
+The product is **Chorui** (চড়ুই — sparrow). Token values, measured contrast, and the
+component-to-token map live in `docs/design-system.md`; screens and components in
+`docs/frontend-screens.md`. Never hard-code a colour — every value is a token declared in both themes.
+
+### Users
+
+Bangladeshi mobile-money users, on a phone, one-handed, often on a poor connection — and, for the
+next six hours, four judges watching a projector. Both audiences want the same thing: proof that the
+money went where it was told to go. The job is not "transfer funds", it is **send this exact amount
+to this exact person and be sure it happened**. Design for a user who is slightly anxious and in a
+hurry, because that is the person who sends ৳25,000 to a mistyped number.
+
+### Brand Personality
+
+**Exact. Unhurried. Accountable.** The interface is a teller, not a salesperson: it states what will
+happen, does it, and hands over a receipt. It never celebrates spending, never manufactures urgency,
+and never hides a number it knows. Confidence is the target emotion — the calm kind that comes from
+being told the truth, not the excited kind.
+
+### Aesthetic Direction
+
+Premium and technically sophisticated through restraint. Purple identity, flat surfaces, generous
+spacing, one gradient in the entire app (the balance card). Reference mood is the supplied purple
+fintech concept — colour only, not its layout. Anti-references: crypto-dashboard neon, gamified
+wallet confetti, and enterprise-grey banking. Both themes ship from Phase 0; light is the default,
+and I1 is always dark because it is a projector surface.
+
+### Design Principles
+
+1. **Purple acts, semantics report.** Purple is brand and action; green, amber, and red mean
+   succeeded, needs-a-decision, and failed, and nothing else. Purple never signals an outcome, and a
+   semantic colour never appears as decoration. Outgoing money is neutral, not red — it is not a failure.
+2. **Measured, not eyeballed.** Every pairing meets WCAG AA against its real background. Four values
+   in the locked palette failed and were corrected; the numbers are in `docs/design-system.md`.
+   Re-measure before changing one.
+3. **The amount is the largest thing on screen.** Money outranks chrome everywhere it appears, in
+   tabular figures, through `AmountDisplay` alone. No inline formatting, ever.
+4. **Friction where it protects.** C2 stands between intent and money in every flow, Confirm is never
+   the visually easy default, and Cancel is always the same size. Everything that does not protect
+   money gets out of the way.
+5. **State is never colour alone.** Every direction, status, and verdict carries an icon and a word
+   as well as a hue — the app has to survive greyscale, colour blindness, and a bad projector.

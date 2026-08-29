@@ -1,9 +1,13 @@
+"use client";
+
 import { TransactionListItem } from "@/components/tx/TransactionListItem";
+import { useI18n } from "@/components/i18n/LanguageProvider";
 import type { Transfer } from "@/lib/types";
 
 export function TransactionList({ transfers }: { transfers: Transfer[] }) {
+  const { formatDate } = useI18n();
   const grouped = transfers.reduce<Record<string, Transfer[]>>((groups, transfer) => {
-    const key = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(new Date(transfer.createdAt));
+    const key = formatDate(transfer.createdAt, { weekday: "long", day: "numeric", month: "long" });
     (groups[key] ??= []).push(transfer);
     return groups;
   }, {});

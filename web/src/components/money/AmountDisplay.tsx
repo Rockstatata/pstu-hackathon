@@ -1,4 +1,7 @@
+"use client";
+
 import { ArrowDownLeft, ArrowUpRight, AlertTriangle, RotateCcw } from "lucide-react";
+import { useI18n } from "@/components/i18n/LanguageProvider";
 import { cn } from "@/lib/cn";
 import { formatTaka } from "@/lib/money";
 
@@ -8,13 +11,13 @@ export type AmountKind = "IN" | "OUT" | "REVERSAL" | "FAILED" | "PLAIN";
  * THE single component for every amount rendered anywhere in the app.
  * No screen formats money itself and no screen calls toFixed.
  *
- * Colour law (docs/design-system.md): outgoing money is NOT red. Red is
- * reserved for failure. Direction is carried by the sign, the icon, AND the
- * colour together, so the row still reads correctly in greyscale.
+ * Colour law: an outgoing or negative movement is red. Direction is carried
+ * by the sign, icon, and colour together, so it remains understandable in
+ * greyscale and is immediately noticeable in a transaction list.
  */
 const KIND = {
   IN: { cls: "text-success-text", sign: "+" as const, Icon: ArrowDownLeft, sr: "Received" },
-  OUT: { cls: "text-text", sign: "-" as const, Icon: ArrowUpRight, sr: "Sent" },
+  OUT: { cls: "text-danger-text", sign: "-" as const, Icon: ArrowUpRight, sr: "Sent" },
   REVERSAL: { cls: "text-text-secondary", sign: null, Icon: RotateCcw, sr: "Reversed" },
   FAILED: { cls: "text-danger-text line-through", sign: null, Icon: AlertTriangle, sr: "Failed" },
   PLAIN: { cls: "text-text", sign: null, Icon: null, sr: "" },
@@ -42,13 +45,15 @@ export function AmountDisplay({
   showIcon = false,
   className,
 }: Props) {
-  const { cls, sign, Icon, sr } = KIND[kind];
+  const effectiveKind = kind === "PLAIN" && minor < 0 ? "OUT" : kind;
+  const { cls, sign, Icon, sr } = KIND[effectiveKind];
+  const { locale, t } = useI18n();
 
   return (
     <span className={cn("inline-flex items-center gap-1.5 tnum", cls, SIZES[size], className)}>
       {showIcon && Icon && <Icon aria-hidden className="size-4 shrink-0" />}
-      {sr && <span className="sr-only">{sr} </span>}
-      {formatTaka(minor, { sign })}
+      {sr && <span className="sr-only">{t(sr)} </span>}
+      {formatTaka(minor, { sign, locale })}
     </span>
   );
 }

@@ -11,7 +11,7 @@ Specified in **`docs/design-system.md`** — tokens, colour law, typography, and
 map. That file is the visual source of truth; this one specifies screens, states and layout. Where
 the two disagree, `design-system.md` wins and this file gets amended.
 
-Note in particular its amendment to the amount colours below: outgoing money is **not** red.
+Note in particular its amendment to the amount colours below: outgoing and negative money movements are **red**.
 
 ---
 

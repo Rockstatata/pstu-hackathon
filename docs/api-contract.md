@@ -286,6 +286,22 @@ payer's outgoing instructions through the Transfer engine and rejects a stale `p
 
 ---
 
+## Financial Outlook — authenticated, read-only
+
+### `GET /financial-outlook` → 200
+
+Returns Account Balance, month-to-date money in/out, the same elapsed portion of the previous month,
+up to three eligible complete months of Typical Money Out, an estimated Account buffer, the largest
+recipient, and six monthly history buckets. Registration issuance is excluded. All amounts remain
+integer poisha; percentage changes and recipient shares are integer basis points, and buffer months
+are integer hundredths.
+
+The response includes the exact comparison, baseline, and band rules used. `NO_BASELINE` and null
+values are expected for new Accounts. This endpoint never creates a Transfer, future instruction,
+goal, classification, or AI request.
+
+---
+
 ## System — no auth required
 
 ### `GET /health/live` · `GET /health/ready`

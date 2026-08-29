@@ -7,6 +7,8 @@ import type { ReactNode } from "react";
 import { shippedTabs } from "@/lib/nav";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { NotificationBell } from "@/components/ui/NotificationBell";
+import { LanguageToggle } from "@/components/i18n/LanguageToggle";
+import { useI18n } from "@/components/i18n/LanguageProvider";
 
 function isCurrent(pathname: string, href: string) {
   return href === "/" ? pathname === href : pathname.startsWith(href);
@@ -15,6 +17,7 @@ function isCurrent(pathname: string, href: string) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const tabs = shippedTabs();
+  const { t } = useI18n();
 
   return (
     <div className="min-h-dvh bg-bg text-text lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
@@ -23,7 +26,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Bird aria-hidden className="size-5 text-primary" strokeWidth={2.25} />
           Chorui
         </Link>
-        <nav aria-label="Main navigation" className="space-y-1">
+        <nav aria-label={t("Main navigation")} className="space-y-1">
           {tabs.map(({ href, label, icon: Icon }) => {
             const current = isCurrent(pathname, href);
             return (
@@ -35,12 +38,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 {current && <span aria-hidden className="absolute inset-y-2 left-0 w-[3px] rounded-r bg-primary" />}
                 <Icon aria-hidden className="size-5" />
-                {label}
+                {t(label)}
               </Link>
             );
           })}
         </nav>
-        <div className="mt-auto border-t border-divider pt-4"><ThemeToggle /></div>
+        <div className="mt-auto flex items-center gap-1 border-t border-divider pt-4"><LanguageToggle /><ThemeToggle /></div>
       </aside>
 
       <div className="min-w-0 pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0">
@@ -49,10 +52,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Bird aria-hidden className="size-5 text-primary" strokeWidth={2.25} />
             Chorui
           </Link>
-          <span className="hidden text-[13px] font-medium text-text-secondary lg:block">Move money with care.</span>
+          <span className="hidden text-[13px] font-medium text-text-secondary lg:block">{t("Move money with care.")}</span>
           <div className="flex items-center gap-1">
             <NotificationBell />
-            <Link href="/settings" className="inline-flex size-11 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-subtle hover:text-text" aria-label="Profile and settings">
+            <LanguageToggle className="lg:hidden" />
+            <Link href="/settings" className="inline-flex size-11 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-subtle hover:text-text" aria-label={t("Profile and settings")}>
               <Settings aria-hidden className="size-5" />
             </Link>
             <ThemeToggle />
@@ -61,7 +65,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main className="mx-auto w-full max-w-[1120px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
       </div>
 
-      <nav aria-label="Main navigation" className="safe-bottom fixed inset-x-0 bottom-0 z-30 flex h-[calc(56px+env(safe-area-inset-bottom))] border-t border-divider bg-sidebar lg:hidden">
+      <nav aria-label={t("Main navigation")} className="safe-bottom fixed inset-x-0 bottom-0 z-30 flex h-[calc(56px+env(safe-area-inset-bottom))] border-t border-divider bg-sidebar lg:hidden">
         {tabs.map(({ href, label, icon: Icon }) => {
           const current = isCurrent(pathname, href);
           return (
@@ -73,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               {current && <span aria-hidden className="absolute inset-x-4 top-0 h-[3px] rounded-b bg-primary" />}
               <Icon aria-hidden className="size-5" />
-              {label}
+              {t(label)}
             </Link>
           );
         })}

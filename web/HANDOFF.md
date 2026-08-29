@@ -6,7 +6,7 @@ time of writing.
 
 ## Build state — GREEN
 
-`npm run build` compiles and type-checks; `npm run lint` is clean. 21 routes are emitted.
+`npm run build` compiles and type-checks; `npm run lint` is clean. 22 routes are emitted.
 
 ## The contract
 
@@ -46,11 +46,16 @@ is a query, not a client-side filter.
 
 ## Shipped extension surfaces
 
-`/smart-wallet`, `/groups`, `/notifications`, `/scheduled`, and consent Reversals are live API-backed
+`/smart-wallet`, `/groups`, `/notifications`, `/scheduled`, `/outlook`, and consent Reversals are live API-backed
 features. Smart Wallet cash is deliberately separate from the conserved digital Ledger. Expense
 Groups calculate an explainable plan, but each payer approves only their own outgoing Transfer.
 Scheduled rows are future instructions, never pending money; the worker rechecks balance and policy
 when due. Reversals are consent requests that create a new compensating Transfer.
+
+`/outlook` reads `GET /financial-outlook` and presents month-to-date flow, comparable trend, Typical
+Money Out, Account buffer, recipient concentration, and six-month history without a health score.
+`lib/projection.ts` is the single deterministic seam for the Goal Projection. It uses integer poisha,
+User-controlled inputs, and a disclosed linear formula; it has no endpoint capable of moving money.
 
 `lib/fixtures.ts` and `lib/admin-demo.ts` are deleted. `/admin` reads live `GET /integrity` and
 `GET /system-info` every 5s and shows an explicit "no verdict available" state when the core is

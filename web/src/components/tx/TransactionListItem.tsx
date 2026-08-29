@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useI18n } from "@/components/i18n/LanguageProvider";
 import { AmountDisplay, type AmountKind } from "@/components/money/AmountDisplay";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { initialsOf } from "@/lib/money";
@@ -10,7 +13,8 @@ export function kindOf(t: Transfer): AmountKind {
 }
 
 export function TransactionListItem({ transfer }: { transfer: Transfer }) {
-  const time = new Date(transfer.createdAt).toLocaleTimeString("en-GB", {
+  const { t, formatDate } = useI18n();
+  const time = formatDate(transfer.createdAt, {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -29,7 +33,7 @@ export function TransactionListItem({ transfer }: { transfer: Transfer }) {
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-medium text-text">
-          {transfer.direction === "IN" ? "From" : "To"} {transfer.counterpartyName}
+          {t(transfer.direction === "IN" ? "From" : "To")} {transfer.counterpartyName}
         </p>
         <p className="text-[13px] text-text-secondary">{time}</p>
       </div>

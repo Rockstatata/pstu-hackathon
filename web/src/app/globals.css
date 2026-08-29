@@ -222,6 +222,10 @@
   .text-\[13px\] {
     font-size: 0.875rem;
   }
+
+  .lang-bn body {
+    font-family: var(--font-bangla), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  }
 }
 
 @layer utilities {

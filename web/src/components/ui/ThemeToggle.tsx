@@ -2,6 +2,7 @@
 
 import { Moon, Sun } from "lucide-react";
 import { useSyncExternalStore } from "react";
+import { useI18n } from "@/components/i18n/LanguageProvider";
 
 const THEME_EVENT = "chorui-theme-change";
 
@@ -16,6 +17,7 @@ function snapshot() {
 
 export function ThemeToggle() {
   const dark = useSyncExternalStore(subscribe, snapshot, () => false);
+  const { t } = useI18n();
 
   function toggleTheme() {
     const next = !dark;
@@ -33,7 +35,7 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={toggleTheme}
-      aria-label={`Switch to ${dark ? "light" : "dark"} mode`}
+      aria-label={t(dark ? "Switch to light mode" : "Switch to dark mode")}
       className="inline-flex size-11 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-subtle hover:text-text"
     >
       {dark ? <Sun aria-hidden className="size-5" /> : <Moon aria-hidden className="size-5" />}

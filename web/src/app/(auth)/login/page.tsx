@@ -8,6 +8,7 @@ import { PinInput } from "@/components/money/PinInput";
 import { Button } from "@/components/ui/Button";
 import { PhoneInput } from "@/components/ui/PhoneInput";
 import { ApiError, api, tokenStore } from "@/lib/api";
+import { useI18n } from "@/components/i18n/LanguageProvider";
 
 export default function LoginPage() {
   return <Suspense fallback={null}><LoginForm /></Suspense>;
@@ -20,11 +21,12 @@ function LoginForm() {
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const { t } = useI18n();
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (phone.length !== 11 || pin.length !== 5) {
-      setError("Enter your 11-digit phone number and 5-digit PIN.");
+      setError(t("Enter your 11-digit phone number and 5-digit PIN."));
       return;
     }
     setSubmitting(true);
@@ -36,7 +38,7 @@ function LoginForm() {
       const destination = next?.startsWith("/") && !next.startsWith("//") ? next : "/";
       router.replace(destination);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.sentence : "We could not sign you in. Try again.");
+      setError(cause instanceof ApiError ? cause.sentence : t("We could not sign you in. Try again."));
     } finally {
       setSubmitting(false);
     }
@@ -44,14 +46,14 @@ function LoginForm() {
 
   return (
     <AuthFrame>
-      <h1 className="text-[24px] font-semibold leading-8">Welcome back</h1>
-      <p className="mt-1 text-[15px] leading-6 text-text-secondary">Sign in to see your account and move money.</p>
+      <h1 className="text-[24px] font-semibold leading-8">{t("Welcome back")}</h1>
+      <p className="mt-1 text-[15px] leading-6 text-text-secondary">{t("Sign in to see your account and move money.")}</p>
       <form className="mt-7 space-y-5" onSubmit={submit}>
-        <PhoneInput value={phone} onChange={setPhone} error={phone && phone.length !== 11 ? "Enter all 11 digits." : null} autoFocus />
-        <PinInput value={pin} onChange={setPin} label="5-digit PIN" error={error} />
-        <Button type="submit" full loading={submitting}>Sign in</Button>
+        <PhoneInput value={phone} onChange={setPhone} error={phone && phone.length !== 11 ? t("Enter all 11 digits.") : null} autoFocus />
+        <PinInput value={pin} onChange={setPin} label={t("5-digit PIN")} error={error} />
+        <Button type="submit" full loading={submitting}>{t("Sign in")}</Button>
       </form>
-      <p className="mt-6 text-center text-[13px] text-text-secondary">New to Chorui? <Link className="font-semibold text-primary-text hover:underline" href="/register">Create an account</Link></p>
+      <p className="mt-6 text-center text-[13px] text-text-secondary">{t("New to Chorui?")} <Link className="font-semibold text-primary-text hover:underline" href="/register">{t("Create an account")}</Link></p>
     </AuthFrame>
   );
 }

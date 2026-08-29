@@ -15,10 +15,12 @@ import { ApiError, api, newIdempotencyKey } from "@/lib/api";
 import { formatTaka, initialsOf, parseTakaToPoisha } from "@/lib/money";
 import { useOnlineStatus } from "@/lib/use-online-status";
 import type { AccountSummary, RecipientPreview } from "@/lib/types";
+import { useI18n } from "@/components/i18n/LanguageProvider";
 
 const TRANSFER_LIMIT_MINOR = 10_000_000;
 
 export default function SendPage() {
+  const { t, locale, formatNumber } = useI18n();
   const router = useRouter();
   const [phone, setPhone] = useState("");
   const [lookup, setLookup] = useState<{ phone: string; recipient: RecipientPreview | null; error: string | null } | null>(null);
@@ -39,18 +41,18 @@ export default function SendPage() {
   const amountMinor = useMemo(() => parseTakaToPoisha(amount), [amount]);
   const amountError = useMemo(() => {
     if (!amount) return null;
-    if (amountMinor === null || amountMinor <= 0) return "Enter an amount greater than zero.";
-    if (amountMinor > TRANSFER_LIMIT_MINOR) return `You can send up to ${formatTaka(TRANSFER_LIMIT_MINOR)} per transfer.`;
+    if (amountMinor === null || amountMinor <= 0) return t("Enter an amount greater than zero.");
+    if (amountMinor > TRANSFER_LIMIT_MINOR) return t("You can send up to {amount} per transfer.", { amount: formatTaka(TRANSFER_LIMIT_MINOR, { locale }) });
     // This is only immediate form feedback. The service rechecks the balance under its lock.
-    if (balance && amountMinor > balance.balanceMinor) return "You do not have enough balance for this transfer.";
+    if (balance && amountMinor > balance.balanceMinor) return t("You do not have enough balance for this transfer.");
     return null;
-  }, [amount, amountMinor, balance]);
+  }, [amount, amountMinor, balance, locale, t]);
 
   useEffect(() => {
     let active = true;
-    api.account().then((account) => active && setBalance(account)).catch(() => active && setFormError("Your balance is unavailable. Reconnect before sending money."));
+    api.account().then((account) => active && setBalance(account)).catch(() => active && setFormError(t("Your balance is unavailable. Reconnect before sending money.")));
     return () => { active = false; };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     let active = true;
@@ -64,14 +66,14 @@ export default function SendPage() {
     let active = true;
     api.recipientPreview(phone)
       .then((preview) => { if (active) setLookup({ phone, recipient: preview, error: null }); })
-      .catch((cause) => { if (active) setLookup({ phone, recipient: null, error: cause instanceof ApiError ? cause.sentence : "We could not find that recipient." }); });
+      .catch((cause) => { if (active) setLookup({ phone, recipient: null, error: cause instanceof ApiError ? cause.sentence : t("We could not find that recipient.") }); });
     return () => { active = false; };
-  }, [phone]);
+  }, [phone, t]);
 
   function continueToConfirmation() {
     if (offline) return;
-    if (!recipient) { setFormError("Enter a registered recipient before continuing."); return; }
-    if (amountError || amountMinor === null || amountMinor <= 0) { setFormError(amountError ?? "Enter an amount before continuing."); return; }
+    if (!recipient) { setFormError(t("Enter a registered recipient before continuing.")); return; }
+    if (amountError || amountMinor === null || amountMinor <= 0) { setFormError(amountError ?? t("Enter an amount before continuing.")); return; }
     setFormError(null);
     setShowConfirmation(true);
   }
@@ -101,7 +103,7 @@ export default function SendPage() {
       // Let the dialog report a wrong PIN in place, so the person can retype it.
       if (cause instanceof ApiError && cause.code === "STEP_UP_FAILED") throw cause;
 
-      const sentence = cause instanceof ApiError ? cause.sentence : "Something went wrong. No money has moved.";
+      const sentence = cause instanceof ApiError ? cause.sentence : t("Something went wrong. No money has moved.");
       // A network outcome can be ambiguous. Keep the idempotency key and the confirmation
       // sheet so the person can check history rather than seeing a false failure receipt.
       if (cause instanceof ApiError && cause.code === "NETWORK") {
@@ -118,18 +120,18 @@ export default function SendPage() {
     <div className="mx-auto max-w-md pb-40">
       
       {offline && <OfflineBanner />}
-      <Link href="/" className="mb-3 inline-flex min-h-11 items-center gap-1 text-[13px] font-semibold text-primary-text hover:underline"><ArrowLeft aria-hidden className="size-4" />Home</Link>
-      <h1 className="text-[24px] font-semibold leading-8">Send money</h1>
-      <p className="mt-1 text-[15px] leading-6 text-text-secondary">Check who you are paying before confirming.</p>
+      <Link href="/" className="mb-3 inline-flex min-h-11 items-center gap-1 text-[13px] font-semibold text-primary-text hover:underline"><ArrowLeft aria-hidden className="size-4" />{t("Home")}</Link>
+      <h1 className="text-[24px] font-semibold leading-8">{t("Send money")}</h1>
+      <p className="mt-1 text-[15px] leading-6 text-text-secondary">{t("Check who you are paying before confirming.")}</p>
 
       <section className="mt-7 space-y-5" aria-labelledby="recipient-heading">
-        <div><p className="text-[13px] font-medium text-primary-text">Step 1 of 2</p><h2 id="recipient-heading" className="mt-1 text-[18px] font-semibold">Choose a recipient</h2></div>
-        <PhoneInput value={phone} onChange={setPhone} error={recipientError} label="Recipient phone number" autoFocus />
-        {lookingUp && <p className="flex items-center gap-2 text-[13px] text-text-secondary"><span className="size-3 animate-spin rounded-full border-2 border-purple-border border-t-primary" />Looking up recipient</p>}
-        {recipient && <div className="space-y-2"><p className="flex items-center gap-1.5 text-[13px] font-medium text-success-text"><CheckCircle2 aria-hidden className="size-4" />Recipient found</p><RecipientCard recipient={recipient} /></div>}
+        <div><p className="text-[13px] font-medium text-primary-text">{t("Step {step} of {total}", { step: formatNumber(1), total: formatNumber(2) })}</p><h2 id="recipient-heading" className="mt-1 text-[18px] font-semibold">{t("Choose a recipient")}</h2></div>
+        <PhoneInput value={phone} onChange={setPhone} error={recipientError} label={t("Recipient phone number")} autoFocus />
+        {lookingUp && <p className="flex items-center gap-2 text-[13px] text-text-secondary"><span className="size-3 animate-spin rounded-full border-2 border-purple-border border-t-primary" />{t("Looking up recipient")}</p>}
+        {recipient && <div className="space-y-2"><p className="flex items-center gap-1.5 text-[13px] font-medium text-success-text"><CheckCircle2 aria-hidden className="size-4" />{t("Recipient found")}</p><RecipientCard recipient={recipient} /></div>}
         {recents.length > 0 && (
           <div>
-            <p className="mb-2 text-[13px] font-medium text-text-secondary">Recent recipients</p>
+            <p className="mb-2 text-[13px] font-medium text-text-secondary">{t("Recent recipients")}</p>
             <div className="grid grid-cols-3 gap-2">
               {recents.map((item) => <button key={item.phone} type="button" onClick={() => setPhone(item.phone)} className="min-h-20 rounded-md border border-divider bg-surface px-2 py-2 text-center transition-colors hover:border-purple-border hover:bg-surface-subtle"><span aria-hidden className="mx-auto flex size-8 items-center justify-center rounded-full bg-purple-soft text-[11px] font-semibold text-primary-text">{initialsOf(item.fullName)}</span><span className="mt-1 block truncate text-[12px] font-medium text-text">{item.fullName.split(" ")[0]}</span></button>)}
             </div>
@@ -138,17 +140,17 @@ export default function SendPage() {
       </section>
 
       <section className="mt-9 space-y-5 border-t border-divider pt-7" aria-labelledby="amount-heading">
-        <div><p className="text-[13px] font-medium text-primary-text">Step 2 of 2</p><h2 id="amount-heading" className="mt-1 text-[18px] font-semibold">Set the amount</h2></div>
+        <div><p className="text-[13px] font-medium text-primary-text">{t("Step {step} of {total}", { step: formatNumber(2), total: formatNumber(2) })}</p><h2 id="amount-heading" className="mt-1 text-[18px] font-semibold">{t("Set the amount")}</h2></div>
         <AmountInput value={amount} onChange={setAmount} minor={amountMinor} balanceMinor={balance?.balanceMinor ?? null} error={amountError} disabled={offline} />
-        <div className="flex flex-col gap-1.5"><label htmlFor="note" className="text-[13px] font-medium text-text-secondary">Note <span className="font-normal">(optional)</span></label><textarea id="note" value={note} onChange={(event) => setNote(event.target.value.slice(0, 140))} rows={3} disabled={offline} className="resize-none rounded-md border border-control bg-surface px-3 py-2.5 text-[15px] text-text outline-none transition-colors placeholder:text-text-muted focus:border-primary disabled:opacity-55" placeholder="What is this for?" /><p className="text-right text-[12px] text-text-muted">{note.length}/140</p></div>
+        <div className="flex flex-col gap-1.5"><label htmlFor="note" className="text-[13px] font-medium text-text-secondary">{t("Note")} <span className="font-normal">{t("(optional)")}</span></label><textarea id="note" value={note} onChange={(event) => setNote(event.target.value.slice(0, 140))} rows={3} disabled={offline} className="resize-none rounded-md border border-control bg-surface px-3 py-2.5 text-[15px] text-text outline-none transition-colors placeholder:text-text-muted focus:border-primary disabled:opacity-55" placeholder={t("What is this for?")} /><p className="text-right text-[12px] text-text-muted">{formatNumber(note.length)}/{formatNumber(140)}</p></div>
       </section>
 
       {formError && <p aria-live="polite" className="mt-5 rounded-md bg-danger-surface px-3 py-2.5 text-[13px] font-medium text-danger-text">{formError}</p>}
       <div className="safe-bottom fixed inset-x-0 bottom-[calc(56px+env(safe-area-inset-bottom))] z-20 border-t border-divider bg-bg px-4 py-3 lg:bottom-0 lg:left-[15rem] sm:px-6">
-        <div className="mx-auto max-w-md"><Button full onClick={continueToConfirmation} disabled={offline || !recipient || Boolean(amountError) || amountMinor === null || amountMinor <= 0}>Review transfer <ChevronRight aria-hidden className="size-4" /></Button></div>
+        <div className="mx-auto max-w-md"><Button full onClick={continueToConfirmation} disabled={offline || !recipient || Boolean(amountError) || amountMinor === null || amountMinor <= 0}>{t("Review transfer")} <ChevronRight aria-hidden className="size-4" /></Button></div>
       </div>
 
-      {showConfirmation && recipient && amountMinor !== null && <ConfirmationSheet amountMinor={amountMinor} recipient={recipient} note={note.trim()} confirming={submitting} disabled={offline} error={offline ? "Reconnect to securely send money." : formError} onCancel={() => { if (!submitting) { setShowConfirmation(false); setFormError(null); } }} onConfirm={() => void confirmTransfer()} />}
+      {showConfirmation && recipient && amountMinor !== null && <ConfirmationSheet amountMinor={amountMinor} recipient={recipient} note={note.trim()} confirming={submitting} disabled={offline} error={offline ? t("Reconnect to securely send money.") : formError} onCancel={() => { if (!submitting) { setShowConfirmation(false); setFormError(null); } }} onConfirm={() => void confirmTransfer()} />}
       {stepUpReason && <StepUpDialog reason={stepUpReason} onCancel={() => setStepUpReason(null)} onVerify={(pin) => confirmTransfer(pin)} />}
     </div>
   );

@@ -175,13 +175,14 @@ colour never appears for decoration, and purple never signals an outcome.
 | Purple | brand, primary action, selection, focus | CTAs, active nav, links, focus rings, balance card |
 | Green | succeeded, healthy, money in | Completed / Paid badges, incoming amounts, I1 passing assertions |
 | Amber | needs a decision, pending, degraded | Pending / Scheduled badges, step-up prompts, offline banner, I1 DEGRADED |
-| Red | failed, blocked, dangerous | Failed / Declined badges, policy errors, I1 failing assertions, destructive confirms |
+| Red | outgoing, failed, blocked, dangerous | Outgoing/negative amounts, Failed / Declined badges, policy errors, I1 failing assertions, destructive confirms |
 
 **Amendment to `docs/frontend-screens.md`.** That file describes `AmountDisplay` as "in green / out
-red". Outgoing money is not a failure, and red is reserved. The shipped law:
+red". Outgoing and negative money movements use red, so money leaving the
+Account is immediately distinguishable. The shipped law:
 
 - **Incoming** — `--success-text`, leading `+`, `ArrowDownLeft`
-- **Outgoing** — `--text`, leading `−`, `ArrowUpRight`
+- **Outgoing** — `--danger-text`, leading `−`, `ArrowUpRight`
 - **Reversal** — `--text-secondary`, `RotateCcw`
 - **Failed** — `--danger-text`, struck through, `AlertTriangle`
 

@@ -219,6 +219,68 @@ export interface WireScheduledTransfer {
   createdAt: string;
 }
 
+export type OutlookTrendBand = "HIGHER" | "LOWER" | "STEADY" | "NO_BASELINE";
+export type OutlookBufferBand =
+  | "THREE_PLUS_MONTHS"
+  | "ONE_TO_THREE_MONTHS"
+  | "UNDER_ONE_MONTH"
+  | "NO_BASELINE";
+
+export interface WireFinancialOutlook {
+  asOf: string;
+  period: {
+    currentMonth: string;
+    currentStart: string;
+    comparisonMonth: string;
+    comparisonStart: string;
+    comparisonEnd: string;
+  };
+  balancePoisha: number;
+  current: {
+    outgoingPoisha: number;
+    incomingPoisha: number;
+    transferCount: number;
+    netPoisha: number;
+  };
+  comparison: {
+    previousOutgoingPoisha: number;
+    previousIncomingPoisha: number;
+    previousTransferCount: number;
+    differencePoisha: number;
+    changeBps: number | null;
+    band: OutlookTrendBand;
+  };
+  typicalMoneyOut: {
+    averagePoisha: number | null;
+    completeMonthsObserved: number;
+    targetMonths: number;
+  };
+  buffer: {
+    monthsHundredths: number | null;
+    band: OutlookBufferBand;
+  };
+  largestRecipient: {
+    name: string;
+    maskedPhone: string;
+    amountPoisha: number;
+    shareBps: number;
+  } | null;
+  history: Array<{
+    month: string;
+    outgoingPoisha: number;
+    incomingPoisha: number;
+    transferCount: number;
+  }>;
+  rules: {
+    timezone: string;
+    comparison: string;
+    typicalMoneyOut: string;
+    trendBandsBps: { higherAt: number; lowerAt: number };
+    bufferBandsHundredths: { threePlusAt: number; onePlusAt: number };
+    issuanceExcluded: boolean;
+  };
+}
+
 /* ========================================================================== */
 /* View models — what the screens render                                      */
 /* ========================================================================== */
@@ -467,6 +529,48 @@ export interface ScheduledTransfer {
   authorizedAt: string;
   resolvedAt: string | null;
   createdAt: string;
+}
+
+export interface FinancialOutlook {
+  asOf: string;
+  period: WireFinancialOutlook["period"];
+  balanceMinor: number;
+  current: {
+    outgoingMinor: number;
+    incomingMinor: number;
+    transferCount: number;
+    netMinor: number;
+  };
+  comparison: {
+    previousOutgoingMinor: number;
+    previousIncomingMinor: number;
+    previousTransferCount: number;
+    differenceMinor: number;
+    changeBps: number | null;
+    band: OutlookTrendBand;
+  };
+  typicalMoneyOut: {
+    averageMinor: number | null;
+    completeMonthsObserved: number;
+    targetMonths: number;
+  };
+  buffer: {
+    monthsHundredths: number | null;
+    band: OutlookBufferBand;
+  };
+  largestRecipient: {
+    name: string;
+    maskedPhone: string;
+    amountMinor: number;
+    shareBps: number;
+  } | null;
+  history: Array<{
+    month: string;
+    outgoingMinor: number;
+    incomingMinor: number;
+    transferCount: number;
+  }>;
+  rules: WireFinancialOutlook["rules"];
 }
 
 /* -------------------------------------------------------------------------- */

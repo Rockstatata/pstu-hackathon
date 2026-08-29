@@ -1673,6 +1673,54 @@
         ]
       }
     },
+    "/api/v1/financial-outlook": {
+      "get": {
+        "description": "Read-only facts and disclosed assessment bands for this Account.",
+        "operationId": "financial_outlook_api_v1_financial_outlook_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Financial Outlook",
+        "tags": [
+          "financial-outlook"
+        ]
+      }
+    },
     "/api/v1/health/live": {
       "get": {
         "description": "Is this process running? Deliberately does not touch the database.\n\nA liveness probe that fails when Postgres is down would have the orchestrator\nrestart three healthy API replicas during a database blip, turning one outage\ninto two.",

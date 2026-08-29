@@ -391,3 +391,26 @@ boundary, and rerun at both 48-VU/10-second and default 24-VU/45-second settings
 External follow-up remains Phase 0.5 only: deploy the current commit to Azure/Vercel, verify public
 TLS/CORS end to end, and perform the real-phone click-through. Those actions require deployment
 credentials and a physical device and were not claimed as locally completed.
+
+---
+
+## Deterministic Financial Outlook
+
+- [x] Define Financial Outlook, Goal Projection, and Typical Money Out without introducing a health score.
+- [x] Add a read-only Account analytics module using Dhaka month boundaries and integer-poisha arithmetic.
+- [x] Compare month-to-date against the same elapsed part of the previous month and expose every rule.
+- [x] Return honest no-baseline states for new Accounts and exclude registration issuance.
+- [x] Build the responsive `/outlook` screen with trends, buffer context, recipient concentration, and history.
+- [x] Add a fixed-control Goal Projection with disclosed formulas and no financial write path.
+- [x] Add the typed frontend seam, navigation, OpenAPI snapshot, regression tests, and Docker context hygiene.
+
+### Review — deterministic Financial Outlook
+
+Financial Outlook is a read-only interpretation of completed Journal Entries. It does not classify
+Users, produce advice, call an AI provider, or create Transfers. Goal Projection runs through one pure
+integer-poisha module and models only the Account Balance, target, monthly set-aside, and an optional
+reduction applied to Typical Money Out. The screen names its assumptions and formula.
+
+Verification: 35 backend tests pass against PostgreSQL; frontend lint and production build pass with
+22 routes; the authenticated endpoint was exercised through the three-replica gateway; the final
+Integrity Check remained `HEALTHY` with zero difference; and `/outlook` was visually checked at 390px.

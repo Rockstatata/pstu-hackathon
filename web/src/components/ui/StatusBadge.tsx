@@ -1,4 +1,7 @@
+"use client";
+
 import { AlertTriangle, Check, Clock, RotateCcw, X, type LucideIcon } from "lucide-react";
+import { useI18n } from "@/components/i18n/LanguageProvider";
 import type { BadgeStatus } from "@/lib/types";
 
 /**
@@ -20,13 +23,14 @@ const STYLES: Record<BadgeStatus, { cls: string; icon: LucideIcon; label: string
 };
 
 export function StatusBadge({ status }: { status: BadgeStatus }) {
+  const { t } = useI18n();
   const { cls, icon: Icon, label } = STYLES[status];
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-semibold ${cls}`}
     >
       <Icon aria-hidden className="size-3.5" />
-      {label}
+      {t(label)}
     </span>
   );
 }

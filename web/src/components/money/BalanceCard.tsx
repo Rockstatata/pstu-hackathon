@@ -3,6 +3,7 @@
 import { Eye, EyeOff, Wallet } from "lucide-react";
 import { useState } from "react";
 import { formatTaka } from "@/lib/money";
+import { useI18n } from "@/components/i18n/LanguageProvider";
 
 interface Props {
   balanceMinor: number | null;
@@ -22,11 +23,12 @@ interface Props {
  */
 export function BalanceCard({ balanceMinor, asOf, offline = false }: Props) {
   const [hidden, setHidden] = useState(false);
+  const { locale, t, formatDate } = useI18n();
 
   return (
     <section
       className={`balance-gradient relative overflow-hidden rounded-lg p-5 ${offline ? "opacity-60" : ""}`}
-      aria-label="Available balance"
+      aria-label={t("Available balance")}
     >
       {/* decorative only — never place text over this */}
       <span
@@ -40,7 +42,7 @@ export function BalanceCard({ balanceMinor, asOf, offline = false }: Props) {
       />
 
       <div className="relative flex items-start justify-between gap-3">
-        <p className="text-[13px] font-medium text-white/80">Available balance</p>
+        <p className="text-[13px] font-medium text-white/80">{t("Available balance")}</p>
         <button
           type="button"
           onClick={() => setHidden((h) => !h)}
@@ -48,7 +50,7 @@ export function BalanceCard({ balanceMinor, asOf, offline = false }: Props) {
           className="-m-2 inline-flex size-11 items-center justify-center rounded-md text-white/90 hover:bg-white/10"
         >
           {hidden ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
-          <span className="sr-only">{hidden ? "Show balance" : "Hide balance"}</span>
+          <span className="sr-only">{t(hidden ? "Show balance" : "Hide balance")}</span>
         </button>
       </div>
 
@@ -58,13 +60,13 @@ export function BalanceCard({ balanceMinor, asOf, offline = false }: Props) {
         ) : hidden ? (
           "৳ ••••••"
         ) : (
-          formatTaka(balanceMinor)
+          formatTaka(balanceMinor, { locale })
         )}
       </p>
 
       {offline && asOf && (
         <p className="relative mt-2 text-[12px] text-white/75">
-          Last updated {new Date(asOf).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+          {t("Last updated {time}", { time: formatDate(asOf, { hour: "2-digit", minute: "2-digit" }) })}
         </p>
       )}
     </section>

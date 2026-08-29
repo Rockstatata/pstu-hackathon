@@ -7,6 +7,7 @@ import { RecipientCard } from "@/components/money/RecipientCard";
 import { Button } from "@/components/ui/Button";
 import { formatTaka } from "@/lib/money";
 import type { RecipientPreview } from "@/lib/types";
+import { useI18n } from "@/components/i18n/LanguageProvider";
 
 interface Props {
   amountMinor: number;
@@ -26,6 +27,7 @@ interface Props {
 
 /** C2 is deliberately a confirmation gate, never a shortcut around recipient verification. */
 export function ConfirmationSheet({ amountMinor, recipient, recipients, note, confirming, disabled = false, error, onCancel, onConfirm, title = "Send money", eyebrow = "Check the recipient carefully", confirmLabel, children }: Props) {
+  const { locale, t } = useI18n();
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/35 sm:items-center sm:justify-center sm:p-5" role="presentation">
       <section
@@ -37,10 +39,10 @@ export function ConfirmationSheet({ amountMinor, recipient, recipients, note, co
         <div className="mx-auto mb-4 h-1 w-9 rounded-full bg-divider sm:hidden" />
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[13px] font-medium text-text-secondary">{eyebrow}</p>
-            <h1 id="confirmation-title" className="mt-1 text-[24px] font-semibold leading-8">{title}</h1>
+            <p className="text-[13px] font-medium text-text-secondary">{t(eyebrow)}</p>
+            <h1 id="confirmation-title" className="mt-1 text-[24px] font-semibold leading-8">{t(title)}</h1>
           </div>
-          <button type="button" onClick={onCancel} className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-surface-subtle" aria-label="Cancel confirmation">
+          <button type="button" onClick={onCancel} className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-surface-subtle" aria-label={t("Cancel confirmation")}>
             <X aria-hidden className="size-5" />
           </button>
         </div>
@@ -54,8 +56,8 @@ export function ConfirmationSheet({ amountMinor, recipient, recipients, note, co
         {error && <p aria-live="polite" className="mt-4 rounded-md bg-danger-surface px-3 py-2 text-[13px] font-medium text-danger-text">{error}</p>}
 
         <div className="mt-6 grid grid-cols-2 gap-3">
-          <Button variant="ghost" onClick={onCancel} disabled={confirming}>Cancel</Button>
-          <Button onClick={onConfirm} loading={confirming} disabled={disabled}>{confirmLabel ?? `Confirm ${formatTaka(amountMinor)}`}</Button>
+          <Button variant="ghost" onClick={onCancel} disabled={confirming}>{t("Cancel")}</Button>
+          <Button onClick={onConfirm} loading={confirming} disabled={disabled}>{confirmLabel ? t(confirmLabel) : t("Confirm {amount}", { amount: formatTaka(amountMinor, { locale }) })}</Button>
         </div>
       </section>
     </div>

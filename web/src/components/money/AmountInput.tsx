@@ -3,6 +3,7 @@
 import { useId } from "react";
 import { cn } from "@/lib/cn";
 import { formatTaka } from "@/lib/money";
+import { useI18n } from "@/components/i18n/LanguageProvider";
 
 interface Props {
   /** Raw typed text, kept as a string so a trailing "." survives keystrokes. */
@@ -34,11 +35,12 @@ export function AmountInput({
 }: Props) {
   const id = useId();
   const errorId = `${id}-error`;
+  const { locale, t } = useI18n();
 
   return (
     <div className="flex flex-col gap-2">
       <label htmlFor={id} className="text-[13px] font-medium text-text-secondary">
-        {label}
+        {t(label)}
       </label>
 
       <div
@@ -75,14 +77,14 @@ export function AmountInput({
       ) : (
         balanceMinor !== null && (
           <p className="text-[13px] text-text-secondary">
-            <span className="tnum">{formatTaka(balanceMinor)}</span> {availableLabel}
+            <span className="tnum">{formatTaka(balanceMinor, { locale })}</span> {t(availableLabel)}
           </p>
         )
       )}
 
       {minor !== null && minor > 0 && !error && (
         <p className="sr-only" aria-live="polite">
-          Amount {formatTaka(minor)}
+          {t("Amount")} {formatTaka(minor, { locale })}
         </p>
       )}
     </div>

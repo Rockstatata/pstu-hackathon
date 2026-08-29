@@ -10,6 +10,7 @@ import type {
   ExpenseGroup,
   ExpenseGroupMember,
   ExpenseGroupSummary,
+  FinancialOutlook,
   IntegrityReport,
   MoneyRequest,
   MoneyRequestListResponse,
@@ -39,10 +40,12 @@ import type {
   WireExpenseGroup,
   WireExpenseGroupMember,
   WireExpenseGroupSummary,
+  WireFinancialOutlook,
   WireSettlementPlan,
   WireScheduledTransfer,
   WireUser,
 } from "./types";
+import { readClientLocale, translate } from "./i18n/locale";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
 const TOKEN_KEY = "chorui.token";
@@ -123,7 +126,9 @@ export class ApiError extends Error {
 
   /** Always a full sentence. Never a raw code, never a stack trace. */
   get sentence(): string {
-    return this.message || SENTENCES[this.code] || SENTENCES.INTERNAL_ERROR;
+    const fallback = SENTENCES[this.code] || SENTENCES.INTERNAL_ERROR;
+    if (readClientLocale() === "bn") return translate("bn", fallback);
+    return this.message || fallback;
   }
 }
 
@@ -440,6 +445,49 @@ function toScheduledTransfer(wire: WireScheduledTransfer): ScheduledTransfer {
   };
 }
 
+function toFinancialOutlook(wire: WireFinancialOutlook): FinancialOutlook {
+  return {
+    asOf: wire.asOf,
+    period: wire.period,
+    balanceMinor: wire.balancePoisha,
+    current: {
+      outgoingMinor: wire.current.outgoingPoisha,
+      incomingMinor: wire.current.incomingPoisha,
+      transferCount: wire.current.transferCount,
+      netMinor: wire.current.netPoisha,
+    },
+    comparison: {
+      previousOutgoingMinor: wire.comparison.previousOutgoingPoisha,
+      previousIncomingMinor: wire.comparison.previousIncomingPoisha,
+      previousTransferCount: wire.comparison.previousTransferCount,
+      differenceMinor: wire.comparison.differencePoisha,
+      changeBps: wire.comparison.changeBps,
+      band: wire.comparison.band,
+    },
+    typicalMoneyOut: {
+      averageMinor: wire.typicalMoneyOut.averagePoisha,
+      completeMonthsObserved: wire.typicalMoneyOut.completeMonthsObserved,
+      targetMonths: wire.typicalMoneyOut.targetMonths,
+    },
+    buffer: wire.buffer,
+    largestRecipient: wire.largestRecipient
+      ? {
+          name: wire.largestRecipient.name,
+          maskedPhone: wire.largestRecipient.maskedPhone,
+          amountMinor: wire.largestRecipient.amountPoisha,
+          shareBps: wire.largestRecipient.shareBps,
+        }
+      : null,
+    history: wire.history.map((month) => ({
+      month: month.month,
+      outgoingMinor: month.outgoingPoisha,
+      incomingMinor: month.incomingPoisha,
+      transferCount: month.transferCount,
+    })),
+    rules: wire.rules,
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /* Endpoints — docs/openapi.json                                               */
 /* -------------------------------------------------------------------------- */
@@ -459,6 +507,9 @@ export const api = {
   me: async () => toUser(await request<WireUser>("/auth/me")),
 
   account: async () => toAccount(await request<WireAccount>("/accounts/me")),
+
+  financialOutlook: async () =>
+    toFinancialOutlook(await request<WireFinancialOutlook>("/financial-outlook")),
 
   /** Returns only what is safe to show a sender before they commit. */
   recipientPreview: async (phone: string): Promise<RecipientPreview> => {

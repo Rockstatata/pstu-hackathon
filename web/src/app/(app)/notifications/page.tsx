@@ -9,6 +9,7 @@ import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { ApiError, api } from "@/lib/api";
 import type { Notification } from "@/lib/types";
 import { useOnlineStatus } from "@/lib/use-online-status";
+import { useI18n } from "@/components/i18n/LanguageProvider";
 
 function requestHref(item: Notification) {
   return item.resourceType === "money_request" && item.resourceId
@@ -17,6 +18,7 @@ function requestHref(item: Notification) {
 }
 
 export default function NotificationsPage() {
+  const { t, formatDate } = useI18n();
   const [items, setItems] = useState<Notification[] | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +34,10 @@ export default function NotificationsPage() {
         setUnreadCount(result.unreadCount);
       })
       .catch((cause) => active && setError(
-        cause instanceof ApiError ? cause.sentence : "We could not load notifications.",
+        cause instanceof ApiError ? cause.sentence : t("We could not load notifications."),
       ));
     return () => { active = false; };
-  }, []);
+  }, [t]);
 
   async function markAllRead() {
     setMarkingAll(true);
@@ -45,7 +47,7 @@ export default function NotificationsPage() {
       setItems(result.items);
       setUnreadCount(result.unreadCount);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.sentence : "We could not update notifications.");
+      setError(cause instanceof ApiError ? cause.sentence : t("We could not update notifications."));
     } finally {
       setMarkingAll(false);
     }
@@ -67,12 +69,12 @@ export default function NotificationsPage() {
       {!online && <OfflineBanner />}
       <header className="mb-5 flex items-end justify-between gap-4">
         <div>
-          <p className="text-[13px] font-medium text-text-secondary">Activity that needs your attention</p>
-          <h1 className="mt-1 text-[24px] font-semibold leading-8">Notifications</h1>
+          <p className="text-[13px] font-medium text-text-secondary">{t("Activity that needs your attention")}</p>
+          <h1 className="mt-1 text-[24px] font-semibold leading-8">{t("Notifications")}</h1>
         </div>
         {unreadCount > 0 && (
           <Button variant="ghost" loading={markingAll} onClick={markAllRead}>
-            <CheckCheck aria-hidden className="size-4" /> Mark all read
+            <CheckCheck aria-hidden className="size-4" /> {t("Mark all read")}
           </Button>
         )}
       </header>
@@ -80,11 +82,11 @@ export default function NotificationsPage() {
       {error && <p role="alert" className="mb-4 rounded-md bg-danger-surface px-3 py-2.5 text-[13px] font-medium text-danger-text">{error}</p>}
 
       {items === null ? (
-        <div className="space-y-3" aria-label="Loading notifications">
+        <div className="space-y-3" aria-label={t("Loading notifications")}>
           {[0, 1, 2].map((item) => <div key={item} className="h-24 animate-pulse rounded-lg bg-surface-subtle" />)}
         </div>
       ) : items.length === 0 ? (
-        <EmptyState icon={Bell} title="Nothing new" detail="Transfers and requests that concern you will appear here." />
+        <EmptyState icon={Bell} title={t("Nothing new")} detail={t("Transfers and requests that concern you will appear here.")} />
       ) : (
         <ul className="divide-y divide-divider overflow-hidden rounded-lg border border-divider bg-surface">
           {items.map((item) => {
@@ -94,12 +96,12 @@ export default function NotificationsPage() {
                 <span aria-hidden className={`mt-1 size-2 shrink-0 rounded-full ${item.readAt ? "bg-control" : "bg-primary"}`} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
-                    <h2 className="text-[15px] font-semibold text-text">{item.title}</h2>
+                    <h2 className="text-[15px] font-semibold text-text">{t(item.title)}</h2>
                     <time className="shrink-0 text-[12px] text-text-tertiary" dateTime={item.createdAt}>
-                      {new Date(item.createdAt).toLocaleDateString("en-BD", { month: "short", day: "numeric" })}
+                      {formatDate(item.createdAt, { month: "short", day: "numeric" })}
                     </time>
                   </div>
-                  <p className="mt-1 text-[14px] leading-5 text-text-secondary">{item.message}</p>
+                  <p className="mt-1 text-[14px] leading-5 text-text-secondary">{t(item.message)}</p>
                 </div>
               </div>
             );

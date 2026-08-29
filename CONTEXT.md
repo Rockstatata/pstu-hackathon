@@ -147,3 +147,20 @@ _Avoid_: Pending Transfer, Reserved money
 The earliest instant at which a Scheduled Transfer may be claimed. Balance, recipient, policy, and
 risk are evaluated again at execution.
 _Avoid_: Guaranteed delivery time
+
+### Financial understanding
+
+**Financial Outlook**:
+A read-only explanation of a User's Account activity based on disclosed, deterministic calculations.
+It describes observed patterns without rating the User or deciding what they should do.
+_Avoid_: Financial Health Score, AI Assistant, Advice
+
+**Goal Projection**:
+A hypothetical path from a starting amount to a chosen target under assumptions the User controls.
+It neither reserves money nor creates a Scheduled Transfer.
+_Avoid_: Savings Account, Guaranteed Forecast, Plan
+
+**Typical Money Out**:
+The average amount that left an Account across eligible, complete calendar months. It is a historical
+baseline, not a spending limit.
+_Avoid_: Budget, Recommended Spending

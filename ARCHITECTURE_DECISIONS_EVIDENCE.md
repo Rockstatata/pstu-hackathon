@@ -1351,4 +1351,665 @@ Integrity: HEALTHY (all 5 assertions = 0)
 
 ---
 
+## Live Demonstration: Docker-Based Verification
+
+This section provides **exact commands** for judges to verify every architectural claim live by running the backend in Docker. The goal is to prove that money moves correctly, recovers from crashes, and never violates the five invariants.
+
+### 21. Docker Environment Setup
+
+**Start the entire stack (PostgreSQL + 3 API replicas + nginx):**
+
+```bash
+cd d:\CODE\pstu-hackathon
+docker compose up -d
+```
+
+This starts:
+- PostgreSQL 16 on localhost:5432
+- 3 FastAPI replicas (api.1, api.2, api.3) on ports 8081, 8082, 8083
+- nginx reverse proxy on port 8080
+- All services with real PostgreSQL, no mocks
+
+**Verify all services are running:**
+
+```bash
+docker compose ps
+```
+
+Expected output:
+```
+NAME      IMAGE               STATUS
+postgres  postgres:16-alpine  Up (healthy)
+api.1     pstu-hackathon:api Up
+api.2     pstu-hackathon:api Up
+api.3     pstu-hackathon:api Up
+nginx     nginx:latest        Up
+```
+
+**Check that all 3 replicas are healthy:**
+
+```bash
+curl -s http://localhost:8080/api/v1/system-info | jq .
+```
+
+Expected response:
+```json
+{
+  "status": "HEALTHY",
+  "replicas": 3,
+  "healthy_replicas": 3,
+  "heartbeats_received_in_last_15_seconds": 3,
+  "timestamp": "2026-08-29T..."
+}
+```
+
+**Verify PostgreSQL schema is initialized:**
+
+```bash
+docker compose exec -T postgres psql -U postgres -d chorui -c "
+  SELECT COUNT(*) as user_count FROM users;
+  SELECT COUNT(*) as account_count FROM accounts;
+"
+```
+
+Expected output: Shows user and account tables are created.
+
+---
+
+### 22. Verifying Double-Entry Journal (ADR-0001)
+
+**Step 1: Register two test users**
+
+```bash
+# User 1: Alice
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone": "01700000001",
+    "name": "Alice",
+    "pin": "1234"
+  }' | jq .
+
+# User 2: Bob
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone": "01700000002",
+    "name": "Bob",
+    "pin": "5678"
+  }' | jq .
+```
+
+Both users receive ৳100,000 (10,000,000 poisha) signup grant.
+
+**Step 2: Check database state (both receive and both debited from issuance)**
+
+```bash
+docker compose exec -T postgres psql -U postgres -d chorui -c "
+  SELECT u.name, u.phone, a.balance_poisha,
+         a.balance_poisha::numeric / 100 as balance_taka
+  FROM users u
+  JOIN accounts a ON a.user_id = u.id
+  ORDER BY u.created_at;
+"
+```
+
+Expected output:
+```
+ name       | phone        | balance_poisha | balance_taka
+------------+--------------+----------------+--------------------
+ Issuance   | (null)       |      -20000000 | -200000.00
+ Alice      | 01700000001  |       10000000 | 100000.00
+ Bob        | 01700000002  |       10000000 | 100000.00
+```
+
+**Explanation:**
+- Issuance account has -20,000,000 poisha (negative by exactly what was issued)
+- Alice and Bob each have +10,000,000 poisha
+- Sum: -20,000,000 + 10,000,000 + 10,000,000 = 0 ✓
+
+**Step 3: Verify Journal Entries match balances**
+
+```bash
+docker compose exec -T postgres psql -U postgres -d chorui -c "
+  SELECT 
+    a.user_id,
+    u.name,
+    a.balance_poisha as cached_balance,
+    COALESCE(SUM(je.amount_poisha), 0) as journal_sum,
+    a.balance_poisha - COALESCE(SUM(je.amount_poisha), 0) as drift
+  FROM accounts a
+  LEFT JOIN users u ON u.id = a.user_id
+  LEFT JOIN journal_entries je ON je.account_id = a.id
+  GROUP BY a.id, a.user_id, u.name, a.balance_poisha
+  ORDER BY u.name;
+"
+```
+
+Expected output: **drift column should be 0 for all rows**
+```
+ name       | cached_balance | journal_sum | drift
+------------+----------------+-------------+-------
+ Issuance   |     -20000000  |  -20000000  |   0
+ Alice      |      10000000  |   10000000  |   0
+ Bob        |      10000000  |   10000000  |   0
+```
+
+This proves ADR-0001: **cached balances match the journal entries exactly**.
+
+---
+
+### 23. Demonstrating Idempotency (ADR-0004)
+
+**Step 1: Get JWT tokens**
+
+```bash
+# Alice login
+ALICE_TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone": "01700000001",
+    "pin": "1234"
+  }' | jq -r '.token')
+
+echo "Alice token: $ALICE_TOKEN"
+```
+
+**Step 2: Make a transfer with an Idempotency-Key**
+
+```bash
+IDEMPOTENCY_KEY="test-transfer-$(date +%s%N)"
+
+curl -X POST http://localhost:8080/api/v1/transfers \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  -d '{
+    "recipientPhone": "01700000002",
+    "amountPoisha": 100000,
+    "note": "First test transfer"
+  }' | jq .
+
+# Store transfer ID for later
+TRANSFER_ID=$(curl -s -X POST http://localhost:8080/api/v1/transfers \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  -d '{
+    "recipientPhone": "01700000002",
+    "amountPoisha": 100000,
+    "note": "First test transfer"
+  }' | jq -r '.transferId')
+```
+
+**Step 3: Check Alice's balance decreased by exactly 100,000 poisha**
+
+```bash
+docker compose exec -T postgres psql -U postgres -d chorui -c "
+  SELECT u.name, a.balance_poisha, a.balance_poisha::numeric / 100 as balance_taka
+  FROM users u
+  JOIN accounts a ON a.user_id = u.id
+  WHERE u.phone IN ('01700000001', '01700000002')
+  ORDER BY u.name;
+"
+```
+
+Expected: Alice down to 9,900,000, Bob up to 10,100,000
+
+**Step 4: Retry with the same Idempotency-Key**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/transfers \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  -d '{
+    "recipientPhone": "01700000002",
+    "amountPoisha": 100000,
+    "note": "First test transfer"
+  }' | jq .
+```
+
+**Expected response:**
+- Same `transferId` as step 2
+- Response exactly identical
+- `status: 201` (same as original)
+
+**Step 5: Verify balances didn't change**
+
+```bash
+docker compose exec -T postgres psql -U postgres -d chorui -c "
+  SELECT u.name, a.balance_poisha
+  FROM users u
+  JOIN accounts a ON a.user_id = u.id
+  WHERE u.phone IN ('01700000001', '01700000002')
+  ORDER BY u.name;
+"
+```
+
+**Expected:** Balances are still the same as after the first transfer (no double-spend).
+
+This proves ADR-0004: **Idempotency prevents duplicate money movement even with identical requests**.
+
+---
+
+### 24. Live Integrity Check (ADR-0001)
+
+**Check all 5 invariants live:**
+
+```bash
+curl -s http://localhost:8080/api/v1/integrity | jq .
+```
+
+**Expected response:**
+
+```json
+{
+  "status": "HEALTHY",
+  "checks": [
+    {
+      "key": "ledger_sums_to_zero",
+      "label": "Every taka debited was credited somewhere",
+      "value": 0,
+      "pass": true
+    },
+    {
+      "key": "balances_match_ledger",
+      "label": "Cached balances disagreeing with the Ledger",
+      "value": 0,
+      "pass": true
+    },
+    {
+      "key": "no_negative_balances",
+      "label": "User Accounts holding less than zero",
+      "value": 0,
+      "pass": true
+    },
+    {
+      "key": "transfers_balanced",
+      "label": "Transfers whose Journal Entries do not sum to zero",
+      "value": 0,
+      "pass": true
+    },
+    {
+      "key": "issuance_mirrors_holdings",
+      "label": "Issued funds not matching the sum of all holdings",
+      "value": 0,
+      "pass": true
+    }
+  ],
+  "counters": {
+    "completedTransfers": 1,
+    "idempotentReplays": 1,
+    "rejectedOverspends": 0,
+    "stepUpsTriggered": 0,
+    "registeredUsers": 2
+  }
+}
+```
+
+**All five assertions must have `value: 0` and `pass: true`.**
+
+**What each means:**
+1. **ledger_sums_to_zero** — Total money in = total money out. Nothing created or destroyed.
+2. **balances_match_ledger** — Cached balances agree with Journal Entry sums.
+3. **no_negative_balances** — Users can't have negative money (only Issuance can).
+4. **transfers_balanced** — Every transfer's debits = credits.
+5. **issuance_mirrors_holdings** — Issuance balance + user total = 0.
+
+---
+
+### 25. Double-Spend Prevention (ADR-0003)
+
+**Demonstrate deterministic lock ordering prevents double-spend:**
+
+```bash
+# Alice tries to send ৳50,000 to Bob and Carol simultaneously
+# But Alice only has ৳9,900,000 left from earlier transfer
+
+# Register Carol
+curl -s -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone": "01700000003",
+    "name": "Carol",
+    "pin": "9999"
+  }' | jq '.accountId' -r > /tmp/carol_account.txt
+
+# Attempt overspend
+curl -X POST http://localhost:8080/api/v1/transfers \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: overspend-$(date +%s%N)" \
+  -d '{
+    "recipients": [
+      {"phone": "01700000002", "amountPoisha": 5000000},
+      {"phone": "01700000003", "amountPoisha": 5000000}
+    ]
+  }' | jq .
+```
+
+**Expected response:**
+```json
+{
+  "code": "INSUFFICIENT_FUNDS",
+  "message": "You have BDT 9,900,000, which is not enough to send BDT 10,000,000.",
+  "status": 400
+}
+```
+
+**Verify balances didn't change:**
+
+```bash
+docker compose exec -T postgres psql -U postgres -d chorui -c "
+  SELECT u.name, a.balance_poisha
+  FROM users u
+  JOIN accounts a ON a.user_id = u.id
+  WHERE u.phone IN ('01700000001', '01700000002', '01700000003')
+  ORDER BY u.name;
+"
+```
+
+**Expected:** Balances remain unchanged (transaction rolled back).
+
+This proves ADR-0003: **Concurrent transfers cannot create money**.
+
+---
+
+### 26. Viewing Backend Logs
+
+**Watch all replica logs in real-time:**
+
+```bash
+docker compose logs -f api
+```
+
+Expected output (for each request):
+```json
+{
+  "timestamp": "2026-08-29T...",
+  "instance": "api.1",
+  "user_id": "...",
+  "operation": "TRANSFER",
+  "status": "COMPLETED",
+  "status_code": 201,
+  "result": "success",
+  "latency_ms": 45,
+  "trace_id": "..."
+}
+```
+
+**Key observations:**
+- No PINs, hashes, or secrets logged
+- Each request emits exactly one JSON log
+- User ID appears only when authenticated
+- Latency and status recorded for auditing
+
+**View logs from a specific replica:**
+
+```bash
+docker compose logs -f api.1
+```
+
+---
+
+### 27. Replica Crash Resilience (ADR-0004)
+
+**Verify money persists after replica crashes:**
+
+**Before crash:**
+```bash
+curl -s http://localhost:8080/api/v1/integrity | jq '.counters.completedTransfers'
+```
+
+**Kill one replica:**
+
+```bash
+docker compose kill api.2
+```
+
+**System should still respond (through other replicas):**
+
+```bash
+curl -s http://localhost:8080/api/v1/system-info | jq .
+```
+
+Expected: 2 healthy replicas instead of 3
+
+**Verify integrity is still healthy:**
+
+```bash
+curl -s http://localhost:8080/api/v1/integrity | jq '.status'
+```
+
+Expected: `"HEALTHY"` — all five assertions still = 0
+
+**Verify transfer counts unchanged:**
+
+```bash
+curl -s http://localhost:8080/api/v1/integrity | jq '.counters.completedTransfers'
+```
+
+Expected: Same count as before (money wasn't lost)
+
+**Bring replica back up:**
+
+```bash
+docker compose up -d api.2
+```
+
+**Verify it rejoins and sees all data:**
+
+```bash
+docker compose logs api.2 | tail -20
+```
+
+Should show reconnection and heartbeat registration.
+
+---
+
+### 28. Running Full Test Suite
+
+**Run all backend unit tests against real PostgreSQL:**
+
+```bash
+docker compose exec -T api python -m unittest discover -s tests -v
+```
+
+Expected: All tests pass, including:
+- Transfer validation
+- Policy rules
+- Daily limits
+- Group atomicity
+- Idempotency
+
+**Run specific test class:**
+
+```bash
+docker compose exec -T api python -m unittest tests.test_regressions.PolicyTests -v
+```
+
+**Run with coverage:**
+
+```bash
+docker compose exec -T api coverage run -m unittest discover -s tests
+docker compose exec -T api coverage report
+```
+
+---
+
+### 29. Running k6 Concurrency Tests
+
+**Test 1: Duplicate storm (idempotency)**
+
+```bash
+docker compose --profile chaos run --rm k6 run /scripts/01-duplicate-storm.js
+```
+
+Expected output:
+```
+     ✓ transfer succeeded
+     ✓ all replays returned same response
+   checks...................: 100.00%
+   http_reqs....................: 50
+   http_reqs.success............: 1
+   http_reqs.replayed...........: 49
+```
+
+**Test 2: Double-spend prevention**
+
+```bash
+docker compose --profile chaos run --rm k6 run /scripts/02-double-spend.js
+```
+
+Expected:
+```
+✓ no double-spend: exactly one transfer succeeded, others rejected
+  checks...................: 100.00%
+  successful_transfers....: 1
+  rejected_overdraws......: 10
+```
+
+**Test 3: Deadlock-free locking**
+
+```bash
+docker compose --profile chaos run --rm k6 run /scripts/03-deadlock-pressure.js
+```
+
+Expected:
+```
+✓ zero deadlock failures
+  checks...................: 100.00%
+  transfers_completed....: 736
+  deadlock_errors........: 0
+  lock_timeouts.........: 0
+```
+
+**Test 4: Sustained load**
+
+```bash
+docker compose --profile chaos run --rm k6 run /scripts/04-sustained-load.js
+```
+
+Expected:
+```
+✓ all replicas healthy
+  checks...................: 100.00%
+  http_reqs..............: 4684
+  http_errors............: 0
+  p95_latency_ms.........: 765
+```
+
+**Test 5: Replica kill (crash resilience)**
+
+```bash
+docker compose --profile chaos run --rm k6 run /scripts/05-replica-kill.js
+```
+
+Expected (watch Docker logs):
+```
+One replica killed mid-test
+  checks...................: 100.00%
+  requests_during_kill...: 50
+  errors_during_kill.....: 47 (503, expected)
+  pool_total_unchanged...: true
+```
+
+**Test 6: Money Request payment**
+
+```bash
+docker compose --profile chaos run --rm k6 run /scripts/06-money-request-payment-storm.js
+```
+
+Expected:
+```
+✓ exactly one payment succeeded
+  checks...................: 100.00%
+  successful_payments....: 1
+  duplicate_conflicts....: 49
+```
+
+---
+
+### 30. Querying PostgreSQL Directly
+
+**Access database directly:**
+
+```bash
+docker compose exec -T postgres psql -U postgres -d chorui
+```
+
+**Once in psql, run queries:**
+
+```sql
+-- See all transfers
+SELECT public_reference, kind, total_poisha, status, created_at
+FROM transfers
+ORDER BY created_at DESC LIMIT 10;
+
+-- See all journal entries
+SELECT t.public_reference, je.account_id, je.amount_poisha
+FROM journal_entries je
+JOIN transfers t ON t.id = je.transfer_id
+ORDER BY je.created_at DESC LIMIT 20;
+
+-- Verify ledger sums to zero
+SELECT SUM(amount_poisha) as total_poisha FROM journal_entries;
+
+-- Check user balances vs journal
+SELECT 
+  u.name,
+  u.phone,
+  a.balance_poisha as cached_balance,
+  COALESCE(SUM(je.amount_poisha), 0) as journal_balance
+FROM users u
+JOIN accounts a ON a.user_id = u.id
+LEFT JOIN journal_entries je ON je.account_id = a.id
+GROUP BY u.id, u.name, u.phone, a.balance_poisha
+ORDER BY u.name;
+
+-- Exit psql
+\q
+```
+
+---
+
+### 31. Cleanup
+
+**Stop all services:**
+
+```bash
+docker compose down
+```
+
+**Remove volume (to start fresh next time):**
+
+```bash
+docker compose down -v
+```
+
+**View logs after shutdown:**
+
+```bash
+docker compose logs
+```
+
+---
+
+## Summary: What Judges Can Verify Live
+
+| Claim | Demo Command | Expected Result |
+|---|---|---|
+| Money is conserved (ADR-0001) | `curl .../integrity` | All 5 checks = 0 |
+| Balances match journal (ADR-0001) | `psql` query | `drift` = 0 for all accounts |
+| Idempotency works (ADR-0004) | Retry with same key | Identical response, no money moved twice |
+| Double-spend prevented (ADR-0003) | Overspend attempt | `INSUFFICIENT_FUNDS`, balances unchanged |
+| Integrity is live (ADR-0001) | `curl .../integrity` after transfer | Numbers update in real-time |
+| Replicas are stateless | Kill one replica | System still responds, integrity healthy |
+| Deterministic locking (ADR-0003) | `k6 03-deadlock-pressure.js` | 736 transfers, zero deadlocks |
+| Concurrent duplicates collapse (ADR-0004) | `k6 01-duplicate-storm.js` | 1 commit, 49 replays |
+| Crash recovery | `docker compose kill api.2` | Money still in PostgreSQL, integrity unchanged |
+
+---
+
 **No claim is untested. No feature is unimplemented. Every decision can be defended with code and evidence.**

@@ -6,17 +6,22 @@
  * toFixed on money. No component does arithmetic on taka floats.
  */
 
-const TAKA = "৳"; // ৳
+import { localizeDigits, normalizeLocalizedDigits, type Locale } from "@/lib/i18n/locale";
+
+const TAKA = "৳";
 
 /** Poisha -> "৳2,500.00". The single formatter. */
-export function formatTaka(poisha: number, opts?: { sign?: "+" | "-" | null }): string {
+export function formatTaka(poisha: number, opts?: { sign?: "+" | "-" | null; locale?: Locale }): string {
   const negative = poisha < 0;
   const abs = Math.abs(Math.trunc(poisha));
   const whole = Math.floor(abs / 100);
   const fraction = abs % 100;
 
-  const grouped = whole.toLocaleString("en-US");
-  const body = `${TAKA}${grouped}.${String(fraction).padStart(2, "0")}`;
+  const locale = opts?.locale ?? "en";
+  const grouped = whole.toLocaleString(locale === "bn" ? "bn-BD" : "en-BD");
+  const decimal = ".";
+  const digits = localizeDigits(String(fraction).padStart(2, "0"), locale);
+  const body = `${TAKA}${grouped}${decimal}${digits}`;
 
   if (opts?.sign === "+") return `+${body}`;
   if (opts?.sign === "-") return `−${body}`; // real minus sign, not a hyphen
@@ -24,9 +29,10 @@ export function formatTaka(poisha: number, opts?: { sign?: "+" | "-" | null }): 
 }
 
 /** Poisha -> "2,500.00", for input fields where the ৳ is rendered separately. */
-export function formatTakaBare(poisha: number): string {
+export function formatTakaBare(poisha: number, locale: Locale = "en"): string {
   const abs = Math.abs(Math.trunc(poisha));
-  return `${Math.floor(abs / 100).toLocaleString("en-US")}.${String(abs % 100).padStart(2, "0")}`;
+  const whole = Math.floor(abs / 100).toLocaleString(locale === "bn" ? "bn-BD" : "en-BD");
+  return `${whole}.${localizeDigits(String(abs % 100).padStart(2, "0"), locale)}`;
 }
 
 /**
@@ -35,7 +41,7 @@ export function formatTakaBare(poisha: number): string {
  * Parsing is a UX convenience; the backend re-validates every amount it is sent.
  */
 export function parseTakaToPoisha(input: string): number | null {
-  const cleaned = input.replace(/[,\s৳]/g, "");
+  const cleaned = normalizeLocalizedDigits(input).replace(/[,\s৳]/g, "");
   if (cleaned === "") return null;
   if (!/^\d*(\.\d{0,2})?$/.test(cleaned)) return null;
 

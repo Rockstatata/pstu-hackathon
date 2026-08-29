@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Bird } from "lucide-react";
 import type { ReactNode } from "react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { LanguageToggle } from "@/components/i18n/LanguageToggle";
 
 export function AuthFrame({ children }: { children: ReactNode }) {
   return (
@@ -12,7 +13,7 @@ export function AuthFrame({ children }: { children: ReactNode }) {
             <Bird aria-hidden className="size-5 text-primary" strokeWidth={2.25} />
             Chorui
           </Link>
-          <ThemeToggle />
+          <div className="flex items-center gap-1"><LanguageToggle /><ThemeToggle /></div>
         </div>
         
         <section className="card p-5 sm:p-7">{children}</section>

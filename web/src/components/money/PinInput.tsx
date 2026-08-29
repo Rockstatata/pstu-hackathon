@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 import { cn } from "@/lib/cn";
+import { normalizeLocalizedDigits } from "@/lib/i18n/locale";
 
 interface Props {
   value: string;
@@ -39,7 +40,7 @@ export function PinInput({ value, onChange, label, error, autoFocus, length = 5 
           ref={ref}
           id={id}
           value={value}
-          onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, length))}
+          onChange={(e) => onChange(normalizeLocalizedDigits(e.target.value).replace(/\D/g, "").slice(0, length))}
           inputMode="numeric"
           autoComplete="one-time-code"
           maxLength={length}

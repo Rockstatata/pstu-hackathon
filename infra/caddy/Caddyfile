@@ -1,0 +1,21 @@
+{
+	# Let's Encrypt needs a contact address for the cert on {$PUBLIC_HOSTNAME}.
+	email {$ACME_EMAIL}
+}
+
+{$PUBLIC_HOSTNAME} {
+	encode gzip
+
+	# Caddy terminates TLS and hands off to the nginx gateway, which is what
+	# actually round-robins across the three API replicas. Two proxies looks
+	# redundant but they do different jobs: Caddy owns certificates, nginx owns
+	# replica distribution and the no-silent-retry rule (ADR-0003).
+	reverse_proxy gateway:80 {
+		header_up X-Forwarded-Proto https
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

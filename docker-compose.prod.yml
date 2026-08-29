@@ -1,0 +1,85 @@
+# Production stack for the Azure VM. Standalone, not an override.
+#
+# Deliberately not an override of docker-compose.yml: Compose merges volume
+# lists rather than replacing them, so an override cannot drop the dev
+# ./backend:/app bind mount or the --reload flag. Two files that must be kept
+# roughly in sync is the lesser evil; the dev file stays the source of truth
+# for service shape.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Frontend is NOT here — it deploys to Vercel and calls this API over HTTPS
+# (docs/adr/0007).
+
+name: pstu-money-prod
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-money}
+    command: >
+      postgres -c max_connections=200 -c log_lock_waits=on -c deadlock_timeout=1s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-money}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    # No published port. The database is reachable only from inside the
+    # compose network — nothing on the public internet should touch it.
+
+  api:
+    build: ./backend
+    command:
+      ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-money}
+      JWT_SECRET: ${JWT_SECRET:?set in .env}
+      LOCK_TIMEOUT_MS: "3000"
+      CORS_ORIGINS: ${CORS_ORIGINS:?set to the Vercel origin}
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+    expose:
+      - "8000"
+    restart: unless-stopped
+    # No bind mount and no --reload: the image is the artifact.
+
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+    expose:
+      - "80"
+    restart: unless-stopped
+    # Not published either — Caddy is the only public entrypoint.
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:?e.g. pstu-money.southeastasia.cloudapp.azure.com}
+      ACME_EMAIL: ${ACME_EMAIL:?email for Let's Encrypt}
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  dbdata:
+  caddy_data:
+  caddy_config:

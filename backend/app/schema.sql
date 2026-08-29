@@ -111,3 +111,10 @@ CREATE TABLE IF NOT EXISTS audit_events (
 );
 
 CREATE INDEX IF NOT EXISTS audit_type_idx ON audit_events (event_type, created_at DESC);
+
+-- The lockout check runs on every login and filters on a JSON key, which
+-- audit_type_idx cannot serve. audit_events is the highest-volume table in the
+-- system, so without this the sign-in path degrades as the demo runs.
+CREATE INDEX IF NOT EXISTS audit_auth_subject_idx
+    ON audit_events ((metadata_json->>'subject'), created_at DESC)
+    WHERE event_type IN ('LOGIN_FAILURE', 'LOGIN_SUCCESS');
